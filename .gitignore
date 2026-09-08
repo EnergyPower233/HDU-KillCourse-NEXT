@@ -1,0 +1,23 @@
+# Dependencies and generated assets
+node_modules/
+.npm-cache/
+.cargo-home/
+dist/
+**/target/
+*.tsbuildinfo
+
+# Local runtime data and secrets
+**/data/
+.env
+.env.*
+!.env.example
+*.log
+
+# Build output and local editor/OS files
+builds/
+*.exe
+*.pdb
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

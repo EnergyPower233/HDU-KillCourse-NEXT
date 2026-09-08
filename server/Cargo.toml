@@ -1,0 +1,29 @@
+[package]
+name = "hdu-course-server"
+version = "0.2.0"
+description = "HDU Course Studio local server (browser edition)"
+edition = "2021"
+license = "Apache-2.0"
+
+[dependencies]
+axum = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "net", "signal"] }
+tokio-util = "0.7"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "cookies", "json"] }
+scraper = "0.23"
+regex = "1"
+chrono = { version = "0.4", features = ["serde"] }
+base64 = "0.22"
+md5 = "0.7"
+rsa = "0.9"
+rand = "0.8"
+aes = "0.8"
+rust-embed = "8"
+directories = "6"
+open = "5"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
