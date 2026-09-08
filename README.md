@@ -159,3 +159,8 @@ server/
 - 本地 API 没有应用级身份认证，不应直接作为公网服务部署。
 - 先退后选不具备原子性，退课成功后选课失败不会自动恢复旧课；扫码取消的在途响应处理也仍待完善。
 - 开发约定见 [CONTRIBUTING.md](CONTRIBUTING.md)，具体源码依据和待验证问题见 [Protocol Review](docs/protocol-review.md)。
+
+
+## GitHub 自动构建与发布
+
+已添加六个平台的 GitHub Actions 工作流。手动运行可先下载测试构建；推送与源码版本一致的版本标签后，全部构建成功会创建带附件的 Release 草稿。详细步骤见 [发布指南](docs/releasing.md)。原有使用说明保持不变。
