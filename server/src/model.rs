@@ -14,7 +14,7 @@ pub struct Course {
     pub jxdd: String,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Action {
     Select,
@@ -426,17 +426,33 @@ impl UaConfig {
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Progress {
     pub course_id: String,
+    #[serde(default)]
+    pub course_name: String,
+    #[serde(default)]
+    pub schedule: String,
+    #[serde(default)]
+    pub action: Option<Action>,
     pub status: String,
     pub message: String,
     pub time: String,
 }
 impl Progress {
+    pub fn for_course(course: &Course, action: Action, status: &str, message: &str) -> Self {
+        let mut event = Self::new(&course.jxbmc, status, message);
+        event.course_name = course.kcmc.clone();
+        event.schedule = course.sksj.clone();
+        event.action = Some(action);
+        event
+    }
     pub fn new(id: &str, status: &str, message: &str) -> Self {
         Self {
             course_id: id.into(),
+            course_name: String::new(),
+            schedule: String::new(),
+            action: None,
             status: status.into(),
             message: message.into(),
-            time: chrono::Local::now().format("%H:%M:%S").to_string(),
+            time: chrono::Local::now().to_rfc3339(),
         }
     }
 }
@@ -495,6 +511,23 @@ pub fn normalize_courses(courses: Vec<Course>) -> Result<Vec<Course>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn course_events_keep_operation_and_identity_without_course_cache() {
+        let course = Course { jxbmc: "class-01".into(), kcmc: "数据结构".into(), sksj: "星期三3-4节".into(), ..Default::default() };
+        for action in [Action::Select, Action::Cancel] {
+            let event = Progress::for_course(&course, action, "success", "学校已返回成功");
+            let saved = serde_json::to_string(&event).unwrap();
+            let restored: Progress = serde_json::from_str(&saved).unwrap();
+            assert_eq!(restored.course_name, "数据结构");
+            assert_eq!(restored.course_id, "class-01");
+            assert_eq!(restored.schedule, "星期三3-4节");
+            assert!(restored.action.is_some());
+            assert!(chrono::DateTime::parse_from_rfc3339(&restored.time).is_ok());
+        }
+        let legacy: Progress = serde_json::from_str(r#"{"course_id":"old","status":"success","message":"ok","time":"10:00:00"}"#).unwrap();
+        assert!(legacy.action.is_none());
+        assert!(legacy.course_name.is_empty());
+    }
     #[test]
     fn merges_duplicate_teaching_rows_but_not_ambiguous_ids() {
         let course = Course {

@@ -340,3 +340,6 @@ Rust `router` 提供的本地接口如下，学校并不提供这些 `/api/*`：
 
 
 日志更新：`run_log.rs` 保存每次运行，`GET /api/runs` 列出批次，`GET /api/runs/{id}?before=N` 按游标读取最多 500 条。新任务只更新当前运行快照，旧 JSONL 不会删除；未实现任务断点恢复。
+
+
+课程结果日志更新：Progress 增加 `course_name/schedule/action`，选课和退课日志保存教学班快照及带时区时间。无 action 的旧日志只标为操作未记录，不推断成功类型。这不改变学校响应成功的判定规则。

@@ -643,13 +643,13 @@ async fn run_tasks(
             if let Some(course) = &t.course {
                 publish(
                     state,
-                    Progress::new(&course.jxbmc, "waiting", "等待计划时间（UTC+8）"),
+                    Progress::for_course(course, Action::Select, "waiting", "等待计划时间（UTC+8）"),
                 );
             }
             for drop in &t.drops {
                 publish(
                     state,
-                    Progress::new(&drop.jxbmc, "waiting", "等待计划时间（UTC+8）"),
+                    Progress::for_course(drop, Action::Cancel, "waiting", "等待计划时间（UTC+8）"),
                 );
             }
         }
@@ -727,7 +727,7 @@ async fn run_tasks(
                     let course = task.course.as_ref().expect("watch tasks always select a course");
                     publish(
                         state,
-                        Progress::new(&course.jxbmc, "querying", "正在查询余量"),
+                        Progress::for_course(course, Action::Select, "querying", "正在查询余量"),
                     );
                     let (c, s, t) = (client.clone(), settings.clone(), course.clone());
                     queries.spawn(async move {
@@ -742,14 +742,13 @@ async fn run_tasks(
                         Ok(true) => ready.push(course),
                         Ok(false) => publish(
                             state,
-                            Progress::new(
-                                &course.jxbmc,
+                            Progress::for_course(&course, Action::Select,
                                 "waiting",
                                 "暂无余量，等待下一次查询",
                             ),
                         ),
                         Err(e) => {
-                            publish(state, Progress::new(&course.jxbmc, "error", &e));
+                            publish(state, Progress::for_course(&course, Action::Select, "error", &e));
                             return Err("查询失败，已停止本轮；请检查网络或重新登录".into());
                         }
                     }
@@ -797,7 +796,7 @@ async fn submit_select(
     let body = match body {
         Ok(body) => body,
         Err(e) => {
-            publish(state, Progress::new(&course.jxbmc, "error", &e));
+            publish(state, Progress::for_course(course, Action::Select, "error", &e));
             return Ok(());
         }
     };
@@ -806,26 +805,27 @@ async fn submit_select(
     }
     publish(
         state,
-        Progress::new(&course.jxbmc, "submitting", "正在提交，请等待学校回复"),
+        Progress::for_course(course, Action::Select, "submitting", "正在提交，请等待学校回复"),
     );
     // Do not drop a mutation future on cancellation: retain its result, then stop.
+    if token.is_cancelled() { return Ok(()); }
     let outcome = client.submit(&Action::Select, &body).await;
     match outcome {
         Outcome::Success => {
             publish(
                 state,
-                Progress::new(&course.jxbmc, "success", "学校已返回成功，请以教务系统已选记录为准"),
+                Progress::for_course(course, Action::Select, "success", "学校已返回成功，请以教务系统已选记录为准"),
             );
             Ok(())
         }
         Outcome::Rejected(message) => {
-            publish(state, Progress::new(&course.jxbmc, "rejected", &message));
+            publish(state, Progress::for_course(course, Action::Select, "rejected", &message));
             Ok(())
         }
         Outcome::Unknown => {
             publish(
                 state,
-                Progress::new(&course.jxbmc, "unknown", "提交结果不明，已暂停全部任务。请先在教务系统核实，勿直接重复提交"),
+                Progress::for_course(course, Action::Select, "unknown", "提交结果不明，已暂停全部任务。请先在教务系统核实，勿直接重复提交"),
             );
             Err("出现结果不明的提交，请核实真实课表后再操作".into())
         }
@@ -848,7 +848,7 @@ async fn submit_drop(
         Err(e) => {
             publish(
                 state,
-                Progress::new(&drop.jxbmc, "error", &format!("退课准备失败：{e}")),
+                Progress::for_course(drop, Action::Cancel, "error", &format!("退课准备失败：{e}")),
             );
             return Ok(false);
         }
@@ -858,28 +858,29 @@ async fn submit_drop(
     }
     publish(
         state,
-        Progress::new(&drop.jxbmc, "submitting", "正在提交退课，请等待学校回复"),
+        Progress::for_course(drop, Action::Cancel, "submitting", "正在提交退课，请等待学校回复"),
     );
+    if token.is_cancelled() { return Ok(false); }
     let outcome = client.submit(&Action::Cancel, &body).await;
     match outcome {
         Outcome::Success => {
             publish(
                 state,
-                Progress::new(&drop.jxbmc, "success", "退课：学校已返回成功，请以教务系统已选记录为准"),
+                Progress::for_course(drop, Action::Cancel, "success", "退课：学校已返回成功，请以教务系统已选记录为准"),
             );
             Ok(true)
         }
         Outcome::Rejected(message) => {
             publish(
                 state,
-                Progress::new(&drop.jxbmc, "rejected", &format!("退课被拒绝：{message}")),
+                Progress::for_course(drop, Action::Cancel, "rejected", &format!("退课被拒绝：{message}")),
             );
             Ok(false)
         }
         Outcome::Unknown => {
             publish(
                 state,
-                Progress::new(&drop.jxbmc, "unknown", "退课结果不明，已暂停全部任务。请先在教务系统核实"),
+                Progress::for_course(drop, Action::Cancel, "unknown", "退课结果不明，已暂停全部任务。请先在教务系统核实"),
             );
             Err("出现结果不明的退课，请核实真实课表后再操作".into())
         }
@@ -904,7 +905,7 @@ async fn run_once_task(
             if let Some(course) = &task.course {
                 publish(
                     state,
-                    Progress::new(&course.jxbmc, "error", "前置退课未全部成功，跳过本次选课"),
+                    Progress::for_course(course, Action::Select, "error", "前置退课未全部成功，跳过本次选课"),
                 );
             }
             return Ok(());

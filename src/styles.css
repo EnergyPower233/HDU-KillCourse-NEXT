@@ -669,3 +669,6 @@ label small { color: var(--text-3); font-weight: 400; }
 .run-log-controls select { max-width: 100%; min-width: 220px; padding: 8px; color: inherit; background: var(--surface, transparent); border: 1px solid var(--border, #cbd5e1); border-radius: 8px; }
 .run-log-hint, .run-log-error { padding: 12px 24px; }
 .run-log-error { color: #dc2626; }
+
+.log-course-name { display: block; margin-bottom: 4px; }
+.log-row time { width: 145px; white-space: normal; overflow-wrap: anywhere; }

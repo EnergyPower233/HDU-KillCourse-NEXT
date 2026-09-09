@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { credentialsFor, defaults, defaultStoredCredentials, filterCourses, formatDurationSecs, formatInterval, mergeCreds, normalizeOrder, parseCourseFile, splitInterval } from './types';
+import { progressLabel, credentialsFor, defaults, defaultStoredCredentials, filterCourses, formatDurationSecs, formatInterval, mergeCreds, normalizeOrder, parseCourseFile, splitInterval } from './types';
 const rows = parseCourseFile(JSON.stringify({ items: [
   { jxbmc: '(2026-2027-1)-A-01', jxb_id: '1', kch_id: 'A', kcmc: '数据结构', sksj: '星期一', kklxmc: '主修课程' },
   { jxbmc: '(2025-2026-1)-A-01', jxb_id: '2', kch_id: 'A', kcmc: '数据结构' }
@@ -44,4 +44,11 @@ describe('legacy course import and search', () => {
     expect(formatDurationSecs(120)).toBe('2 分钟');
     expect(formatDurationSecs(30)).toBe('30 秒');
   });
+});
+
+it('labels successful selects and drops separately without guessing old events', () => {
+  const event = { course_id: 'class-01', status: 'success', message: 'ok', time: '10:00:00' };
+  expect(progressLabel({ ...event, action: 'select' })).toBe('选课成功');
+  expect(progressLabel({ ...event, action: 'cancel' })).toBe('退课成功');
+  expect(progressLabel(event)).toBe('操作未记录 · 成功');
 });

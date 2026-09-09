@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from './bridge';
-import { statuses, type Progress, type RunInfo, type Snapshot } from './types';
+import { progressLabel, type Progress, type RunInfo, type Snapshot } from './types';
 
 export function ActivityLog({ snapshot }: { snapshot: Snapshot }) {
   const [runs, setRuns] = useState<RunInfo[]>([]);
@@ -83,7 +83,7 @@ export function ActivityLog({ snapshot }: { snapshot: Snapshot }) {
     {error && <p role="alert" className="run-log-error">{error}</p>}
     {warning && <p role="status">{warning}</p>}
     {expanded && live && <p className="run-log-hint">正在查看较早记录，实时刷新已暂停；点击「查看最新记录」恢复。</p>}
-    {loading ? <p className="run-log-hint" role="status">正在读取日志…</p> : events.length ? <div className="log-list">{events.slice().reverse().map((e, i) => <div className="log-row" key={`${selected}-${events.length - i}`}><time>{e.time}</time><span className={`badge ${e.status}`}>{statuses[e.status] || e.status}</span><div>{e.message}{e.course_id && <small>{e.course_id}</small>}</div></div>)}</div> : <p className="run-log-hint">{selected ? '这次运行暂时没有事件。' : '开始任务后，每次运行都会保存在这里，重启程序后仍可查看。'}</p>}
+    {loading ? <p className="run-log-hint" role="status">正在读取日志…</p> : events.length ? <div className="log-list">{events.slice().reverse().map((e, i) => <div className="log-row" key={`${selected}-${events.length - i}`}><time dateTime={e.time}>{e.time.includes("T") ? new Date(e.time).toLocaleString() : e.time}</time><span className={`badge ${e.status}`}>{progressLabel(e)}</span><div>{e.course_id && <strong className="log-course-name">{e.course_name || e.course_id}</strong>}{e.message}{e.course_id && <small>{e.course_id}{e.schedule && ` · ${e.schedule}`}</small>}</div></div>)}</div> : <p className="run-log-hint">{selected ? '这次运行暂时没有事件。' : '开始任务后，每次运行都会保存在这里，重启程序后仍可查看。'}</p>}
     {before !== null && <div className="run-log-controls"><button className="button secondary" disabled={olderLoading || loading} onClick={() => void loadOlder()}>{olderLoading ? '读取中…' : '加载更早的 500 条'}</button></div>}
   </>;
 }

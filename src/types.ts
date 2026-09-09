@@ -14,7 +14,7 @@ export type Settings = {
   lists: TaskList[];
   active_list: number;
 };
-export type Progress = { course_id: string; status: string; message: string; time: string };
+export type Progress = { course_name?: string; schedule?: string; action?: "select" | "cancel" | null; course_id: string; status: string; message: string; time: string };
 export type RunInfo = { id: string; list_name: string; started_at: string };
 export type RunPage = { run: RunInfo; events: Progress[]; next_before: number | null; warning: string | null };
 export type Snapshot = { current_run?: RunInfo | null; log_error?: string | null; running: boolean; logged_in: boolean; history: Progress[]; fetch_progress: { page: number; courses: number; total: number | null; finished: boolean } | null };
@@ -150,4 +150,11 @@ export function parseCourseFile(text: string): Course[] {
     for (const key of ['sksj','jxbzc','jzgxx','jxdd'] as const) previous[key] = [...new Set(`${previous[key]};${course[key]}`.split(';').filter(Boolean))].join(';');
   }
   return [...unique.values()];
+}
+
+export function progressLabel(event: Progress): string {
+  const status = event.status === 'success' ? '成功' : event.status === 'rejected' ? '被拒绝' : (statuses[event.status] || event.status);
+  if (event.action === 'select') return `选课${status}`;
+  if (event.action === 'cancel') return `退课${status}`;
+  return event.course_id ? `操作未记录 · ${status}` : (statuses[event.status] || event.status);
 }
