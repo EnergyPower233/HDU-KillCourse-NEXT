@@ -6,6 +6,7 @@ import {
   ShieldCheck, Square, Sun, Terminal, Trash2, UserRound, X, Zap,
 } from 'lucide-react';
 import { api } from './bridge';
+import { ActivityLog } from './ActivityLog';
 import {
   buildFixedUa, credentialsFor, defaults, defaultStoredCredentials, defaultUaConfig,
   filterCourses, formatDurationSecs, formatInterval, intervalUnitLabels, intervalUnitMs,
@@ -421,8 +422,8 @@ export default function App() {
         </section>}
 
         {view === 'activity' && <section className="panel">
-          <div className="panel-heading"><div><h2>本轮运行记录</h2><p>保留最近 1,000 条记录 · 新任务开始时清空</p></div><span className={`badge ${snapshot.running ? 'running' : 'neutral'}`}><span className={`dot ${snapshot.running ? 'green' : ''}`}/>{snapshot.running ? '正在运行' : '未运行'}</span></div>
-          {snapshot.history.length ? <div className="log-list">{snapshot.history.slice().reverse().map((e, i) => <div className="log-row" key={`${i}-${e.time}`}><time>{e.time}</time><span className={`badge ${e.status}`}>{statuses[e.status] || e.status}</span><div>{e.message}{e.course_id && <small>{e.course_id}</small>}</div></div>)}</div> : <Empty icon={<Terminal size={26}/>} title="这里会记录每一次进展" text="开始任务后，查询与选退课结果将实时显示在这里。"/>}
+          <ActivityLog snapshot={snapshot}/>
+
         </section>}
 
         {view === 'settings' && <div className="settings-layout">
@@ -542,7 +543,7 @@ export default function App() {
         <div className="review-list">{rl.tasks.map((t, i) => <div key={i}><span className={`badge ${t.course ? 'querying' : 'rejected'}`}>{t.course ? '选课' : '仅退课'}</span><span>{t.course ? t.course.kcmc : ''}{t.drops.length > 0 && <small className="review-drops">先退：{t.drops.map(d => d.kcmc).join('、')}</small>}{t.course && <small>{t.course.jxbmc}</small>}</span></div>)}</div>
         <p className="review-note">{settings.start_at ? `计划时间：${settings.start_at.replace('T', ' ')}（UTC+8）${settings.relogin_before_secs > 0 ? `，将提前 ${formatDurationSecs(settings.relogin_before_secs)}按你的顺序重新登录` : ''}` : '立即开始'}{hasDrops && '。退课后不能保证重新选回，请确认教学班。'}</p>
       </>; })()}
-      <button className="button primary full" disabled={!!busy || offline} onClick={() => perform('启动中', async () => { await save(); await api.startTasks(settings, reviewList); setSnapshot(s => ({ ...s, running: true, history: [] })); setReviewOpen(false); setView('activity'); toast('任务已启动'); })}>{busy ? <LoaderCircle className="spin" size={15}/> : <Radio size={15}/>}确认并开始</button>
+      <button className="button primary full" disabled={!!busy || offline} onClick={() => perform('启动中', async () => { await save(); await api.startTasks(settings, reviewList); setReviewOpen(false); setView('activity'); setSnapshot(await api.snapshot()); toast('任务已启动'); })}>{busy ? <LoaderCircle className="spin" size={15}/> : <Radio size={15}/>}确认并开始</button>
     </Modal>}
 
     {shutdown && <div className="shutdown-screen"><div><CheckCircle2 size={40}/><h1>本地服务已关闭</h1><p>你可以关闭这个页面了。下次使用时重新启动 HDU-KillCourse NEXT 即可。</p></div></div>}

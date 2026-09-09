@@ -15,7 +15,9 @@ export type Settings = {
   active_list: number;
 };
 export type Progress = { course_id: string; status: string; message: string; time: string };
-export type Snapshot = { log_error?: string | null; running: boolean; logged_in: boolean; history: Progress[]; fetch_progress: { page: number; courses: number; total: number | null; finished: boolean } | null };
+export type RunInfo = { id: string; list_name: string; started_at: string };
+export type RunPage = { run: RunInfo; events: Progress[]; next_before: number | null; warning: string | null };
+export type Snapshot = { current_run?: RunInfo | null; log_error?: string | null; running: boolean; logged_in: boolean; history: Progress[]; fetch_progress: { page: number; courses: number; total: number | null; finished: boolean } | null };
 export type Credentials = { method: string; username: string; password: string; session_id: string; route: string };
 export type QrPoll = { status: 'waiting' | 'expired' | 'confirmed'; message: string };
 export type LoginMethod = 'cas' | 'newjw' | 'qrcode' | 'cookie';

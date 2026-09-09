@@ -10,7 +10,7 @@ mod model;
 mod run_log;
 
 use axum::{
-    extract::State,
+    extract::{State, Path, Query},
     http::{header, StatusCode, Uri},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -87,6 +87,7 @@ impl AppState {
 
 #[derive(Serialize)]
 struct Snapshot {
+    current_run: Option<run_log::RunInfo>,
     log_error: Option<String>,
     running: bool,
     logged_in: bool,
@@ -220,6 +221,7 @@ async fn health() -> Api<serde_json::Value> {
 async fn snapshot(State(state): State<AppState>) -> Api<Snapshot> {
     let i = state.lock();
     Ok(Json(Snapshot {
+        current_run: i.run_log.as_ref().map(|log| log.info.clone()),
         log_error: i.log_error.clone(),
         running: i.cancel.is_some(),
         logged_in: i.client.is_some(),
@@ -235,6 +237,17 @@ fn load_settings_file() -> Result<Settings, String> {
     }
     serde_json::from_slice(&std::fs::read(path).map_err(|_| "无法读取配置")?)
         .map_err(|_| "保存的配置已损坏".into())
+}
+
+async fn runs_get() -> Api<Vec<run_log::RunInfo>> {
+    run_log::list_runs(&data_path("logs")?).map(Json).map_err(ApiError)
+}
+
+#[derive(Deserialize)]
+struct RunQuery { before: Option<usize> }
+
+async fn run_get(Path(id): Path<String>, Query(query): Query<RunQuery>) -> Api<run_log::RunPage> {
+    run_log::read_run(&data_path("logs")?, &id, query.before).map(Json).map_err(ApiError)
 }
 
 async fn settings_get() -> Api<Settings> {
@@ -975,6 +988,8 @@ fn router(state: AppState) -> Router {
     Router::new()
         .route("/api/health", get(health))
         .route("/api/snapshot", get(snapshot))
+        .route("/api/runs", get(runs_get))
+        .route("/api/runs/{id}", get(run_get))
         .route("/api/settings", get(settings_get).post(settings_save))
         .route("/api/courses", get(courses_get))
         .route("/api/courses/import", post(courses_import))

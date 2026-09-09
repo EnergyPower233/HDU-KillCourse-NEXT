@@ -1,4 +1,5 @@
 import { defaults, parseCourseFile, type Course, type Credentials, type QrPoll, type Settings, type Snapshot, type StoredCredentials, type UaConfig } from './types';
+import type { RunInfo, RunPage } from './types';
 
 // The UI always runs in a browser against the local Rust server. There is no
 // offline preview mode anymore: without the backend, real actions are
@@ -20,6 +21,8 @@ async function request<T>(path: string, options: { method?: string; body?: unkno
 }
 
 export const api = {
+  runs: () => request<RunInfo[]>('/api/runs'),
+  run: (id: string, before?: number) => request<RunPage>(`/api/runs/${encodeURIComponent(id)}${before === undefined ? "" : `?before=${before}`}`),
   health: () => request<{ ok: boolean }>('/api/health'),
   snapshot: () => request<Snapshot>('/api/snapshot'),
   loadSettings: () => request<Settings>('/api/settings'),

@@ -664,3 +664,8 @@ label small { color: var(--text-3); font-weight: 400; }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+.run-log-controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 16px 24px; }
+.run-log-controls label { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.run-log-controls select { max-width: 100%; min-width: 220px; padding: 8px; color: inherit; background: var(--surface, transparent); border: 1px solid var(--border, #cbd5e1); border-radius: 8px; }
+.run-log-hint, .run-log-error { padding: 12px 24px; }
+.run-log-error { color: #dc2626; }

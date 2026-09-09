@@ -41,6 +41,66 @@ impl RunLog {
     }
 }
 
+#[derive(Serialize)]
+pub struct RunPage {
+    pub run: RunInfo,
+    pub events: Vec<Progress>,
+    pub next_before: Option<usize>,
+    pub warning: Option<String>,
+}
+
+fn valid_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 100 && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+}
+
+pub fn list_runs(directory: &Path) -> Result<Vec<RunInfo>, String> {
+    use std::io::BufRead;
+    if !directory.exists() { return Ok(vec![]); }
+    let mut runs = Vec::new();
+    for entry in fs::read_dir(directory).map_err(|e| e.to_string())? {
+        let path = entry.map_err(|e| e.to_string())?.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("jsonl") { continue; }
+        let mut header = String::new();
+        std::io::BufReader::new(File::open(&path).map_err(|e| e.to_string())?)
+            .read_line(&mut header).map_err(|e| e.to_string())?;
+        let info: RunInfo = serde_json::from_str(&header).map_err(|_| "运行日志头损坏".to_string())?;
+        if !valid_id(&info.id) || path.file_stem().and_then(|s| s.to_str()) != Some(&info.id) {
+            return Err("运行日志编号与文件不符".into());
+        }
+        runs.push(info);
+    }
+    runs.sort_by(|a, b| b.id.cmp(&a.id));
+    Ok(runs)
+}
+
+pub fn read_run(directory: &Path, id: &str, before: Option<usize>) -> Result<RunPage, String> {
+    use std::io::BufRead;
+    if !valid_id(id) { return Err("运行编号不合法".into()); }
+    let file = File::open(directory.join(format!("{id}.jsonl"))).map_err(|_| "找不到运行日志".to_string())?;
+    let mut reader = std::io::BufReader::new(file);
+    let mut line = String::new();
+    reader.read_line(&mut line).map_err(|e| e.to_string())?;
+    let run: RunInfo = serde_json::from_str(&line).map_err(|_| "运行日志头损坏".to_string())?;
+    if run.id != id { return Err("运行日志编号与文件不符".into()); }
+    let mut events = std::collections::VecDeque::new();
+    let mut count = 0usize;
+    let mut warning = None;
+    while before.is_none_or(|limit| count < limit) {
+        line.clear();
+        if reader.read_line(&mut line).map_err(|e| e.to_string())? == 0 { break; }
+        if !line.ends_with('\n') {
+            warning = Some("最后一条记录尚未完整写入，已显示此前的完整日志".into());
+            break;
+        }
+        let event: Progress = serde_json::from_str(&line).map_err(|_| format!("第 {} 条日志损坏", count + 1))?;
+        events.push_back(event);
+        count += 1;
+        if events.len() > 500 { events.pop_front(); }
+    }
+    let first = count - events.len();
+    Ok(RunPage { run, events: events.into(), next_before: (first > 0).then_some(first), warning })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -60,6 +120,29 @@ mod tests {
         assert_eq!(text.lines().count(), 1006);
         let last: Progress = serde_json::from_str(text.lines().last().unwrap()).unwrap();
         assert_eq!(last.message, "1004");
+        fs::remove_dir_all(directory).unwrap();
+    }
+    #[test]
+    fn history_pages_survive_restart_and_ignore_partial_tail() {
+        let directory = std::env::temp_dir().join(format!("hdu-log-pages-{:016x}", rand::random::<u64>()));
+        let mut log = RunLog::create(&directory, "历史清单").unwrap();
+        let id = log.info.id.clone();
+        for n in 0..503 { log.append(&Progress::new("id", "success", &n.to_string())).unwrap(); }
+        drop(log);
+        assert_eq!(list_runs(&directory).unwrap()[0].list_name, "历史清单");
+        let latest = read_run(&directory, &id, None).unwrap();
+        assert_eq!(latest.events.len(), 500);
+        assert_eq!(latest.events[0].message, "3");
+        let older = read_run(&directory, &id, latest.next_before).unwrap();
+        assert_eq!(older.events.len(), 3);
+        assert_eq!(older.events[0].message, "0");
+        assert!(older.next_before.is_none());
+        let mut file = OpenOptions::new().append(true).open(directory.join(format!("{id}.jsonl"))).unwrap();
+        file.write_all(b"{partial").unwrap(); drop(file);
+        let partial = read_run(&directory, &id, None).unwrap();
+        assert_eq!(partial.events.len(), 500);
+        assert!(partial.warning.is_some());
+        assert!(read_run(&directory, "../credentials", None).is_err());
         fs::remove_dir_all(directory).unwrap();
     }
     #[test]
