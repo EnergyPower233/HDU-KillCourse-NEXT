@@ -10,7 +10,7 @@ fn main() {
         fs::create_dir_all(dist).expect("cannot create ../dist");
         fs::write(
             dist.join("index.html"),
-            "<!doctype html><meta charset=\"utf-8\"><title>Course Studio</title>界面尚未构建，请先运行 npm run build",
+            "<!doctype html><meta charset=\"utf-8\"><title>HDU-KillCourse NEXT</title>界面尚未构建，请先运行 npm run build",
         )
         .expect("cannot write placeholder index.html");
     }

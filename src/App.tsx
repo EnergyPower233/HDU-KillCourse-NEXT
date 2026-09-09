@@ -368,7 +368,7 @@ export default function App() {
 
   return <div className="app-shell">
     <aside className="sidebar">
-      <div className="brand"><span className="brand-icon"><GraduationCap size={20}/></span><div>杭电选课<small>COURSE STUDIO</small></div></div>
+      <div className="brand"><span className="brand-icon"><GraduationCap size={20}/></span><div>杭电选课<small>HDU-KillCourse NEXT</small></div></div>
       <div className="workspace-label">我的工作台</div>
       <nav aria-label="主导航">{navigation.map(n => <button key={n.id} className={`nav-item ${view === n.id ? 'active' : ''}`} onClick={() => setView(n.id)}><n.icon size={18}/>{n.title}{n.id === 'tasks' && tasks.length > 0 && <span className="nav-count">{tasks.length}</span>}</button>)}</nav>
       <div className="sidebar-bottom">
@@ -389,7 +389,7 @@ export default function App() {
         </div>
       </header>
       <main>
-        {offline && <div className="offline-banner" role="alert"><ShieldCheck size={16}/><span><strong>尚未连接本地服务。</strong>请先启动 HDU Course Studio 服务端程序，本页面的登录与选课功能暂不可用。</span></div>}
+        {offline && <div className="offline-banner" role="alert"><ShieldCheck size={16}/><span><strong>尚未连接本地服务。</strong>请先启动 HDU-KillCourse NEXT 服务端程序，本页面的登录与选课功能暂不可用。</span></div>}
         <div className="page-heading"><div><h1>{view === 'courses' ? '把想上的课，安排好。' : view === 'tasks' ? '每一门课，进度清晰。' : view === 'activity' ? '每一步，都有记录。' : '让选课按你的节奏进行。'}</h1><p>{view === 'courses' ? '浏览教学班，建立任务清单，在一个页面里完成选课。' : view === 'tasks' ? '统一管理选退课任务，随时查看学校返回的结果。' : view === 'activity' ? '查询、提交与异常信息会在这里实时更新。' : '设置学期与执行方式，保存后用于下一次任务。'}</p></div><div className="heading-actions">{view === 'courses' && <><button className="button secondary" disabled={locked} onClick={() => input.current?.click()}><ArrowDownToLine size={15}/>导入课程</button><button className="button primary" disabled={locked} onClick={() => snapshot.logged_in ? perform('获取课程中', async () => { setCourses(await api.fetchCourses(settings)); toast('课程资料已更新'); }) : setLoginOpen(true)}>{busy === '获取课程中' ? <><LoaderCircle className="spin" size={15}/>{(() => { const fp = snapshot.fetch_progress; if (fp && fp.page > 0) return fp.total ? `第 ${fp.page} 页 · ${fp.courses}/${fp.total} 门` : `第 ${fp.page} 页 · ${fp.courses} 门`; return `获取课程中 · ${elapsed} 秒`; })()}</> : <><Radio size={15}/>从教务获取</>}</button></>}</div></div>
         <input aria-label="导入 course.json" ref={input} type="file" accept=".json,application/json" hidden onChange={e => { void importFile(e.target.files?.[0]); e.target.value = ''; }}/>
         {notice && <div role={notice.error ? 'alert' : 'status'} className={`notice ${notice.error ? 'notice-error' : ''}`}><span>{notice.text}</span><button aria-label="关闭提示" onClick={() => setNotice(null)}><X size={15}/></button></div>}
@@ -490,7 +490,7 @@ export default function App() {
             <div className="info-version">Rust 本地服务 + React 浏览器界面<br/>Browser Edition 0.2.0</div>
           </section>
         </div>}
-        <footer className="page-footer"><span><span className={`dot ${snapshot.running ? 'green' : ''}`}/>{snapshot.running ? '任务正在运行' : '工作台就绪'}</span><span>{saved ? '设置已保存' : '有未保存的修改'}<span className="footer-divider">/</span>HDU COURSE STUDIO</span></footer>
+        <footer className="page-footer"><span><span className={`dot ${snapshot.running ? 'green' : ''}`}/>{snapshot.running ? '任务正在运行' : '工作台就绪'}</span><span>{saved ? '设置已保存' : '有未保存的修改'}<span className="footer-divider">/</span>HDU-KillCourse NEXT</span></footer>
       </main>
     </div>
 
@@ -541,10 +541,10 @@ export default function App() {
         <div className="review-list">{rl.tasks.map((t, i) => <div key={i}><span className={`badge ${t.course ? 'querying' : 'rejected'}`}>{t.course ? '选课' : '仅退课'}</span><span>{t.course ? t.course.kcmc : ''}{t.drops.length > 0 && <small className="review-drops">先退：{t.drops.map(d => d.kcmc).join('、')}</small>}{t.course && <small>{t.course.jxbmc}</small>}</span></div>)}</div>
         <p className="review-note">{settings.start_at ? `计划时间：${settings.start_at.replace('T', ' ')}（UTC+8）${settings.relogin_before_secs > 0 ? `，将提前 ${formatDurationSecs(settings.relogin_before_secs)}按你的顺序重新登录` : ''}` : '立即开始'}{hasDrops && '。退课后不能保证重新选回，请确认教学班。'}</p>
       </>; })()}
-      <button className="button primary full" disabled={!!busy || offline} onClick={() => perform('启动中', async () => { await save(); await api.startTasks(settings, reviewList); setSnapshot(s => ({ ...s, running: true, history: [] })); setReviewOpen(false); toast('任务已启动'); })}>{busy ? <LoaderCircle className="spin" size={15}/> : <Radio size={15}/>}确认并开始</button>
+      <button className="button primary full" disabled={!!busy || offline} onClick={() => perform('启动中', async () => { await save(); await api.startTasks(settings, reviewList); setSnapshot(s => ({ ...s, running: true, history: [] })); setReviewOpen(false); setView('activity'); toast('任务已启动'); })}>{busy ? <LoaderCircle className="spin" size={15}/> : <Radio size={15}/>}确认并开始</button>
     </Modal>}
 
-    {shutdown && <div className="shutdown-screen"><div><CheckCircle2 size={40}/><h1>本地服务已关闭</h1><p>你可以关闭这个页面了。下次使用时重新启动 Course Studio 即可。</p></div></div>}
+    {shutdown && <div className="shutdown-screen"><div><CheckCircle2 size={40}/><h1>本地服务已关闭</h1><p>你可以关闭这个页面了。下次使用时重新启动 HDU-KillCourse NEXT 即可。</p></div></div>}
   </div>;
 }
 

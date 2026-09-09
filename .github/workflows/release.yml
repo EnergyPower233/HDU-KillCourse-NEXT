@@ -87,7 +87,7 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
           TARGET: ${{ matrix.target }}
         run: |
-          $name = "hdu-course-studio-v$env:VERSION-$env:PLATFORM"
+          $name = "hdu-killcourse-next-v$env:VERSION-$env:PLATFORM"
           $package = Join-Path 'staging' $name
           New-Item -ItemType Directory -Path $package, 'artifacts' -Force | Out-Null
           Copy-Item -LiteralPath "server/target/$env:TARGET/release/hdu-course-server.exe" -Destination $package
@@ -102,7 +102,7 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
           TARGET: ${{ matrix.target }}
         run: |
-          name="hdu-course-studio-v${VERSION}-${PLATFORM}"
+          name="hdu-killcourse-next-v${VERSION}-${PLATFORM}"
           mkdir -p "staging/$name" artifacts
           cp "server/target/$TARGET/release/hdu-course-server" "staging/$name/"
           chmod +x "staging/$name/hdu-course-server"
@@ -154,6 +154,6 @@ jobs:
           else
             gh release create "$TAG" artifacts/* \
               --verify-tag --draft --prerelease \
-              --title "HDU Course Studio $TAG" \
+              --title "HDU-KillCourse NEXT $TAG" \
               --notes '自动构建的预览版本。请下载对应系统与架构的压缩包；使用说明见包内 README.md。构建与自动测试不代表真实教务选退课已经验证。'
           fi

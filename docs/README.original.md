@@ -1,4 +1,4 @@
-# 杭电选课 · Course Studio
+# HDU-KillCourse NEXT
 
 基于原 HDU-KillCourse（Go）项目协议实现的浏览器版选课工具。Rust 本地服务负责与学校教务系统通信，React 界面在浏览器中使用。源 Go 项目保留在 `../Code`。
 

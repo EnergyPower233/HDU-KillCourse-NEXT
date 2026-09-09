@@ -1,7 +1,7 @@
 [package]
 name = "hdu-course-server"
 version = "0.2.0"
-description = "HDU Course Studio local server (browser edition)"
+description = "HDU-KillCourse NEXT local server (browser edition)"
 edition = "2021"
 license = "Apache-2.0"
 

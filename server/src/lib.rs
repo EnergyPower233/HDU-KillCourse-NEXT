@@ -1,4 +1,4 @@
-//! Course Studio local server: REST API + embedded frontend.
+//! HDU-KillCourse NEXT local server: REST API + embedded frontend.
 //!
 //! The HTTP layer replaces the previous Tauri/WebView shell. All school
 //! protocol code (login, course fetch, select/cancel) lives in `client.rs`
@@ -990,7 +990,7 @@ pub async fn serve(port: u16) -> Result<(), Box<dyn std::error::Error>> {
     let (state, mut rx) = AppState::new();
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
     let url = format!("http://127.0.0.1:{port}");
-    println!("杭电选课 Course Studio 已启动：{url}");
+    println!("HDU-KillCourse NEXT 已启动：{url}");
     println!("按 Ctrl+C 或在界面中点击「退出程序」关闭本地服务。");
     migrate_portable_data();
     spawn_auto_login(state.clone());
