@@ -5,11 +5,7 @@ async fn main() {
     let port = std::env::var("HDU_PORT")
         .ok()
         .and_then(|v| v.parse::<u16>().ok())
-        .or_else(|| {
-            std::env::args()
-                .nth(1)
-                .and_then(|v| v.parse::<u16>().ok())
-        })
+        .or_else(|| std::env::args().nth(1).and_then(|v| v.parse::<u16>().ok()))
         .unwrap_or(6688);
     match hdu_course_server::serve(port).await {
         Ok(()) => {}

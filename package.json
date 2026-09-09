@@ -11,17 +11,22 @@
     "server:dev": "cargo run --manifest-path server/Cargo.toml",
     "server:build": "cargo build --release --manifest-path server/Cargo.toml",
     "server:test": "cargo test --manifest-path server/Cargo.toml",
-    "desktop:build": "npm run build && npm run server:build"
+    "desktop:build": "npm run build && npm run server:build",
+    "format": "prettier --write . && cargo fmt --manifest-path server/Cargo.toml",
+    "format:check": "prettier --check . && cargo fmt --manifest-path server/Cargo.toml -- --check"
   },
   "dependencies": {
+    "lucide-react": "^0.468.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "lucide-react": "^0.468.0"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.3",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "jsdom": "^29.1.1",
+    "prettier": "3.9.6",
     "typescript": "~5.7.2",
     "vite": "^6.0.0",
     "vitest": "^3.0.0"

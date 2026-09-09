@@ -18,3 +18,9 @@
 问题报告请包含复现步骤、操作系统、版本和脱敏错误信息。不要粘贴密码、Cookie、个人课表或完整学校响应。
 
 提交说明写清具体问题、行为变化和验证方式。协议修复与大规模格式调整尽量分开，便于审查。
+
+## 代码组织与检查
+
+修改入口与模块边界见 [维护指南](docs/architecture.md)。提交前运行 `npm run format:check`、`npm run build`、`npm test` 与 `npm run server:test`；Rust 改动还需通过 `cargo clippy --locked --manifest-path server/Cargo.toml --lib -- -D warnings`。
+
+保持学校协议字段名，避免在多个模块复制相同的导入规则；注释写明当前行为、约束和原因。

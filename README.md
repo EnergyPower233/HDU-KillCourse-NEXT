@@ -138,22 +138,29 @@ npm run server:test  # Rust 测试
 
 ```text
 src/
-  App.tsx          界面、操作流程和对话框
-  ActivityLog.tsx  运行批次与历史日志界面
-  styles.css       双主题设计系统与布局样式
-  bridge.ts        本地服务 API 调用
-  types.ts         数据类型与课程导入、搜索、UA/间隔辅助函数
-  types.test.ts    前端测试
-server/
-  src/main.rs      服务入口：端口、启动
-  src/lib.rs       REST 端点、任务调度、停止和运行记录
-  src/client.rs    学校接口、登录及加密适配、UA 解析、抖动
-  src/model.rs     模型与参数校验
-  src/run_log.rs   运行日志文件保存与分页读取
-  build.rs         构建时将 dist 内嵌进二进制
+  App.tsx          页面切换与共享状态的组装
+  pages/           课程、任务和设置页面
+  components/      页面说明、弹窗及共享界面组件
+  hooks/           登录、清单编辑、初始加载与轮询、主题
+  domain/          课程筛选、凭据映射、时间与 UA 等纯函数
+  bridge.ts        本地 HTTP API 客户端
+  types.ts         前后端交换的数据类型
+server/src/
+  lib.rs           本地服务启动
+  api/             按功能分组的 HTTP 路由与请求处理
+  client/          学校 HTTP 通信、登录、课程查询与选退课协议
+  scheduler.rs     任务执行顺序、并发查询与停止处理
+  state.rs         共享状态和运行事件发布
+  storage.rs       本地配置与课程缓存读写
+  model.rs         数据模型与业务规则校验
+  task_import.rs   任务清单交换文件解析与校验
+  run_log.rs       运行日志保存与分页读取
+examples/          可编辑的 JSON 示例
 ```
 
 本项目使用 Apache-2.0 许可，完整许可见 [LICENSE](LICENSE)。协议逐项对照见 [Protocol Review](docs/protocol-review.md)。
+
+源码职责和修改入口见 [维护指南](docs/architecture.md)。格式化执行 `npm run format`，提交前执行 `npm run format:check`。
 
 ## 开发说明
 
@@ -164,16 +171,13 @@ server/
 - 先退后选不具备原子性，退课成功后选课失败不会自动恢复旧课；扫码取消的在途响应处理也仍待完善。
 - 开发约定见 [CONTRIBUTING.md](CONTRIBUTING.md)，具体源码依据和待验证问题见 [Protocol Review](docs/protocol-review.md)。
 
-
 ## GitHub 自动构建与发布
 
 已添加六个平台的 GitHub Actions 工作流。手动运行可先下载测试构建；推送与源码版本一致的版本标签后，全部构建成功会创建带附件的 Release 草稿。详细步骤见 [发布指南](docs/releasing.md)。
 
-
 ## 每次运行的本地日志
 
 每次启动任务都会在运行数据目录的 `logs/` 中创建独立 JSONL 文件，第一行为运行编号、清单名称和开始时间，后续每行是一条事件。运行记录页可按开始时间和清单选择批次，点击「加载更早的 500 条」查完整记录。事件逐条保存，不受界面最近 1000 条的内存限制；日志目录随 `HDU_DATA_DIR` 设置移动。创建失败时不会启动任务，运行中写入失败会提示并请求停止。日志可能包含课程资料，分享前请检查内容。
-
 
 ## 区分每门课程的选退课结果
 

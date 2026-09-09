@@ -1,8 +1,8 @@
 # Protocol Review：Rust 0.2.0 与 Go v1.4.9 源码对照
 
-本次重写以当前文件为准：新项目为 **Rust 本地 HTTP 服务 + React 浏览器界面**，原项目为此前归档并核对过的 Go v1.4.9 源码（现已从本仓库移除）。它不是旧 Tauri 预览版，也不只是把 Tauri 命令换成 HTTP：任务模型、凭证保存、扫码、定时和失败处理均有变化。
+新项目为 **Rust 本地 HTTP 服务 + React 浏览器界面**，原项目为归档核对过的 Go v1.4.9 源码。本文记录两版的协议对应关系与业务差异。
 
-**审查性质：静态源码对照。** 本次没有登录学校、调用学校接口、提交选退课，也没有重新安装依赖或运行测试。下文“相同”仅指明确指出的字段或算法相同，不代表线上兼容性已经验证；“问题”表示可从代码推导的行为，不替代运行复现。版本来自 Go `vars/const.go` 和 Rust `server/Cargo.toml`，不引用无法确认的构建机器或历史提交号。
+**验证范围：源码对照与本地测试。** 已运行 Rust 单元测试、本地模拟 HTTP 测试及 React 交互测试，未使用真实学校会话，也未提交真实选退课。下文“相同”仅指对应字段或算法，不代表学校线上兼容性已验证。
 
 当前 Rust/React 文件链接相对本文所在目录。Go 引用以原仓库内的文件路径与函数名保留，源码来源为 cr4n5/HDU-KillCourse；不再链接已经删除的本地归档。本次目录整理只调整引用，下面的静态对照仍针对删除前已审查的 Go v1.4.9 副本，不声称远程仓库当前内容相同。
 
@@ -10,19 +10,19 @@
 
 可以把学校接口理解为远程函数：URL 是函数地址，表单是参数，JSON/HTML 是返回值。浏览器调用的是本机 `/api/*`；真正给学校发送请求的是 Rust 的 `SchoolClient`。这两层接口不能混为一谈。
 
-| 职责 | Go 原版 | Rust / React 当前版 |
-|---|---|---|
-| HTTP、Cookie、请求头 | `client/client.go`：`NewClient/Get/Post/SaveCookies` | [client.rs](../server/src/client.rs)：`build_http/SchoolClient/get_with/post` |
-| 学校端点与表单 | `client/service.go`、`client/req.go`、`client/resp.go` | [client.rs](../server/src/client.rs)：`login/courses/body_config/available/prepare/submit/parse_outcome` |
-| 登录策略 | `pkg/login/login.go`：`Login` | `SchoolClient::login_with_order`；[lib.rs](../server/src/lib.rs)：登录端点、`spawn_auto_login`；[App.tsx](../src/App.tsx)：`autoLogin` |
-| 课程资料 | `pkg/course/getCourse.go` | [model.rs](../server/src/model.rs)：`parse_courses/normalize_courses`；`lib.rs` 课程端点 |
-| 单次选退课 | `pkg/course/killCourse.go`：`KillCourse/HandleCourse` | `lib.rs`：`run_tasks/run_once_task/submit_select/submit_drop` |
-| 蹲课 | `pkg/course/waitCourse.go` | `lib.rs`：`run_tasks` 的 `Mode::Watch` 分支 |
-| 本地界面与配置 | `pkg/web/web.go`、`config/config.go` | `lib.rs`：`router/data_path`；[bridge.ts](../src/bridge.ts)、`App.tsx` |
+| 职责                 | Go 原版                                                | Rust / React 当前版                                                                                                                                |
+| -------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| HTTP、Cookie、请求头 | `client/client.go`：`NewClient/Get/Post/SaveCookies`   | [client/mod.rs](../server/src/client/mod.rs)：HTTP 客户端与请求辅助函数                                                                            |
+| 学校端点与表单       | `client/service.go`、`client/req.go`、`client/resp.go` | [client/auth.rs](../server/src/client/auth.rs)、[courses.rs](../server/src/client/courses.rs)、[enrollment.rs](../server/src/client/enrollment.rs) |
+| 登录策略             | `pkg/login/login.go`：`Login`                          | `SchoolClient::login_with_order`；[api/auth.rs](../server/src/api/auth.rs)；[useLogin.ts](../src/hooks/useLogin.ts)                                |
+| 课程资料             | `pkg/course/getCourse.go`                              | [model.rs](../server/src/model.rs)：解析与合并；[api/courses.rs](../server/src/api/courses.rs)：课程端点                                           |
+| 单次选退课           | `pkg/course/killCourse.go`：`KillCourse/HandleCourse`  | [scheduler.rs](../server/src/scheduler.rs)：`run_tasks/run_once_task/submit_select/submit_drop`                                                    |
+| 蹲课                 | `pkg/course/waitCourse.go`                             | `scheduler.rs`：`run_tasks` 的 `Mode::Watch` 分支                                                                                                  |
+| 本地界面与配置       | `pkg/web/web.go`、`config/config.go`                   | [api/mod.rs](../server/src/api/mod.rs)、[storage.rs](../server/src/storage.rs)、[bridge.ts](../src/bridge.ts)、[pages](../src/pages)               |
 
 ```mermaid
 flowchart LR
-    UI[React 浏览器界面] -->|本机 JSON API| API[Rust lib.rs]
+    UI[React 浏览器界面] -->|本机 JSON API| API[Rust api 模块]
     API --> S[任务调度与状态]
     S --> C[SchoolClient]
     API --> C
@@ -32,19 +32,19 @@ flowchart LR
 
 ## 2. 主要结论
 
-| 模块 | 对照结果 | 不能省略的差异 |
-|---|---|---|
-| CAS 密码 | 算法、表单和 SSO 跳转目标对应 | Rust 分两次取登录页，execution 与密钥不来自同一响应 |
-| 教务密码 | CSRF + RSA PKCS#1 v1.5 主流程对应 | Rust 使用服务器 exponent；Go 固定 65537；公钥 URL 时间参数不同 |
-| 钉钉扫码 | 学校端点和 CSRF 派生算法对应 | CSRF 值复用策略、轮询、过期判断及取消行为不同 |
-| Cookie / 登录验证 | 使用同名 Cookie | Rust 在登录阶段读取当前学期学生信息；Go 验证路径和时机不同 |
-| 课程获取 | 同一任务落实端点 | 每次请求 9999 条，按总数或空页继续分页，省略大量空字段和两个非空字段 |
-| 选课准备 | 同一端点、19 个字段对应 | `njdm_id` 来源不同，不能把 Go 来源称为目标教学班年级 |
-| 选课 / 退课 | 端点相同 | Rust 提交表单分别比 Go 多 2 / 6 个字段，尚无线上接受证据 |
-| 结果处理 | 识别相同的主要成功值 | Rust 退课只有成功/未知；Go 上层可能把明确选课失败当作蹲课完成 |
-| 任务执行 | 已经改变 | 多清单、手动配对退课、串行提交、最多 4 个并发查询 |
-| 定时 / 停止 | 不等价 | 提前重登可能延迟启动；停止任务和退出服务不是同一种保证 |
-| 本地架构 / 数据 | 已经改变 | Rust 提供完整业务 API、自动登录、明文凭证文件；不再是离线预览适配 |
+| 模块              | 对照结果                          | 不能省略的差异                                                       |
+| ----------------- | --------------------------------- | -------------------------------------------------------------------- |
+| CAS 密码          | 算法、表单和 SSO 跳转目标对应     | Rust 分两次取登录页，execution 与密钥不来自同一响应                  |
+| 教务密码          | CSRF + RSA PKCS#1 v1.5 主流程对应 | Rust 使用服务器 exponent；Go 固定 65537；公钥 URL 时间参数不同       |
+| 钉钉扫码          | 学校端点和 CSRF 派生算法对应      | CSRF 值复用策略、轮询、过期判断及取消行为不同                        |
+| Cookie / 登录验证 | 使用同名 Cookie                   | Rust 在登录阶段读取当前学期学生信息；Go 验证路径和时机不同           |
+| 课程获取          | 同一任务落实端点                  | 每次请求 9999 条，按总数或空页继续分页，省略大量空字段和两个非空字段 |
+| 选课准备          | 同一端点、19 个字段对应           | `njdm_id` 来源不同，不能把 Go 来源称为目标教学班年级                 |
+| 选课 / 退课       | 端点相同                          | Rust 提交表单分别比 Go 多 2 / 6 个字段，尚无线上接受证据             |
+| 结果处理          | 识别相同的主要成功值              | Rust 退课只有成功/未知；Go 上层可能把明确选课失败当作蹲课完成        |
+| 任务执行          | 已经改变                          | 多清单、手动配对退课、串行提交、最多 4 个并发查询                    |
+| 定时 / 停止       | 不等价                            | 提前重登可能延迟启动；停止任务和退出服务不是同一种保证               |
+| 本地架构 / 数据   | 已经改变                          | Rust 提供完整业务 API、自动登录、明文凭证文件；不再是离线预览适配    |
 
 后续最应关注的是登录页参数配对、提交字段差异、退课结果解析、定时偏移和任务生命周期。UA 的影响尚未知，不能称为已经绕过检测或保证兼容。
 
@@ -52,22 +52,22 @@ flowchart LR
 
 以下 `JW` 表示 `https://newjw.hdu.edu.cn/jwglxt`，`SSO` 表示 `https://sso.hdu.edu.cn`。表中列出的是两版源码使用的地址，不是本次实测可用地址。
 
-| 步骤 | 方法与路径 | Go → Rust |
-|---|---|---|
-| CAS 登录页 / 提交 | GET / POST `SSO/login` | `GetCasLoginConfig/CasLoginPost` → `cas_execution/login/qr_login_complete` |
-| CAS 转入教务 | GET `SSO/login?service=http://newjw.hdu.edu.cn/sso/driot4login` | `CasLoginNewjw` → 登录分支中的 GET |
-| 扫码 ID | GET `SSO/api/protected/qrlogin/loginid` | `GetQrLoginId` → `qr_login_id` |
-| 扫码图片 | GET `SSO/api/public/qrlogin/qrgen/{id}/dingDingQr` | `GetQrCode` → `qr_code` |
-| 扫码状态 | GET `SSO/api/protected/qrlogin/scan/{id}` | `GetQrLoginStatus` → `qr_scan` |
-| 教务登录页 / 提交 | GET / POST `JW/xtgl/login_slogin.html` | `GetCsrftoken/NewjwLoginPost` → `login` 的 newjw 分支 |
-| 教务 RSA 公钥 | GET `JW/xtgl/login_getPublicKey.html` | `GetPublicKey` → newjw 分支；Go 额外带 `?time=Unix秒` |
-| 学生信息 | GET `JW/kbcx/xskbcx_cxXsgrkb.html?gnmkdm=N2151&xnm=…&xqm=…` | `GetStuInfo` → `validate_session` |
-| 课程资料 | POST `JW/rwlscx/rwlscx_cxRwlsIndex.html?doType=query&gnmkdm=N1548` | `GetCourse` → `courses` |
-| 选课页面配置 | GET `JW/xsxk/zzxkyzb_cxZzxkYzbIndex.html?gnmkdm=N253512&layout=default` | `GetClientBodyConfig` → `body_config` |
-| 教学班操作 ID | POST `JW/xsxk/zzxkyzbjk_cxJxbWithKchZzxkYzb.html?gnmkdm=N253512` | `GetDoJxbId` → `prepare` |
-| 余量查询 | POST `JW/xsxk/zzxkyzb_cxZzxkYzbPartDisplay.html?gnmkdm=N253512` | `SearchCourse` → `available` |
-| 选课提交 | POST `JW/xsxk/zzxkyzbjk_xkBcZyZzxkYzb.html?gnmkdm=N253512` | `SelectCourse` → `submit(Action::Select)` |
-| 退课提交 | POST `JW/xsxk/zzxkyzb_tuikBcZzxkYzb.html?gnmkdm=N253512` | `CancelCourse` → `submit(Action::Cancel)` |
+| 步骤              | 方法与路径                                                              | Go → Rust                                                                  |
+| ----------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| CAS 登录页 / 提交 | GET / POST `SSO/login`                                                  | `GetCasLoginConfig/CasLoginPost` → `cas_execution/login/qr_login_complete` |
+| CAS 转入教务      | GET `SSO/login?service=http://newjw.hdu.edu.cn/sso/driot4login`         | `CasLoginNewjw` → 登录分支中的 GET                                         |
+| 扫码 ID           | GET `SSO/api/protected/qrlogin/loginid`                                 | `GetQrLoginId` → `qr_login_id`                                             |
+| 扫码图片          | GET `SSO/api/public/qrlogin/qrgen/{id}/dingDingQr`                      | `GetQrCode` → `qr_code`                                                    |
+| 扫码状态          | GET `SSO/api/protected/qrlogin/scan/{id}`                               | `GetQrLoginStatus` → `qr_scan`                                             |
+| 教务登录页 / 提交 | GET / POST `JW/xtgl/login_slogin.html`                                  | `GetCsrftoken/NewjwLoginPost` → `login` 的 newjw 分支                      |
+| 教务 RSA 公钥     | GET `JW/xtgl/login_getPublicKey.html`                                   | `GetPublicKey` → newjw 分支；Go 额外带 `?time=Unix秒`                      |
+| 学生信息          | GET `JW/kbcx/xskbcx_cxXsgrkb.html?gnmkdm=N2151&xnm=…&xqm=…`             | `GetStuInfo` → `validate_session`                                          |
+| 课程资料          | POST `JW/rwlscx/rwlscx_cxRwlsIndex.html?doType=query&gnmkdm=N1548`      | `GetCourse` → `courses`                                                    |
+| 选课页面配置      | GET `JW/xsxk/zzxkyzb_cxZzxkYzbIndex.html?gnmkdm=N253512&layout=default` | `GetClientBodyConfig` → `body_config`                                      |
+| 教学班操作 ID     | POST `JW/xsxk/zzxkyzbjk_cxJxbWithKchZzxkYzb.html?gnmkdm=N253512`        | `GetDoJxbId` → `prepare`                                                   |
+| 余量查询          | POST `JW/xsxk/zzxkyzb_cxZzxkYzbPartDisplay.html?gnmkdm=N253512`         | `SearchCourse` → `available`                                               |
+| 选课提交          | POST `JW/xsxk/zzxkyzbjk_xkBcZyZzxkYzb.html?gnmkdm=N253512`              | `SelectCourse` → `submit(Action::Select)`                                  |
+| 退课提交          | POST `JW/xsxk/zzxkyzb_tuikBcZzxkYzb.html?gnmkdm=N253512`                | `CancelCourse` → `submit(Action::Cancel)`                                  |
 
 所有学校 POST 均以表单编码发送；本机前端与 Rust 之间则使用 JSON。两版都依赖 Cookie Jar 维护学校会话，没有把学校 Cookie 直接作为浏览器对本机服务的认证机制。
 
@@ -75,7 +75,7 @@ flowchart LR
 
 ### 4.1 HTTP 行为
 
-Go `NewClient` 没有设置显式总超时；Rust `build_http` 为**总超时 180 秒、连接超时 30 秒**，适用于该客户端的请求，不只是课程下载。课程分页外还有 `courses_fetch` 的 1200 秒整体上限。旧文档的“20 秒 / 10 秒”不再适用。
+Go `NewClient` 没有设置显式总超时；Rust `build_http` 为**总超时 180 秒、连接超时 30 秒**，适用于该客户端的请求，不只是课程下载。课程分页外还有 `courses_fetch` 的 1200 秒整体上限。
 
 Rust `get_with/get_bytes/post` 调用 `error_for_status`；Go 通用 GET/POST 返回状态码和正文，由业务层处理，多个调用点忽略状态码。Rust 会话 UA 创建时确定，此后每个请求使用同一字符串。Go 也支持 `cfg.UserAgent`，并非只能使用常量。
 
@@ -143,16 +143,16 @@ Go 先尝试启用的 Cookie，再按 CAS/NewJW 的 level 回退，CAS 内部由
 
 共同非空参数：`xnm/xqm/xnmc/xqmc/_search=false/queryModel.sortOrder=asc`。
 
-| 参数 / 行为 | Go `GetCourseOnline` | Rust `courses` |
-|---|---|---|
-| `queryModel.showCount` | `9999` | `9999` |
-| `queryModel.currentPage` | `1` | 1～200，顺序请求 |
-| `jxbmc` | 全量时空，缺失课程补查时为教学班名称 | 空；搜索在本地完成 |
-| `nd` / `time` | Unix 秒 / `0` | 不发送 |
-| 其他筛选键 | `GetCourseReq::ToFormData` 发送大量空字符串，包括 sortName | 省略 |
-| 完成条件 | 单次响应 | 达到学校总数；无总数时请求至空页。最多 200 页、10 万条原始记录；重复页、总数变化或提前空页报错，不保存部分结果 |
-| 进度 | 日志 | 回调记录页数与原始累计数；读取 totalResult/totalCount/totalSize，兼容数字和数字字符串，不把 count 当作总数 |
-| 错误 | 显式检查“统一身份认证”“无功能权限” | 检查权限文本，其余靠 HTTP/JSON/字段解析报错 |
+| 参数 / 行为              | Go `GetCourseOnline`                                       | Rust `courses`                                                                                                 |
+| ------------------------ | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `queryModel.showCount`   | `9999`                                                     | `9999`                                                                                                         |
+| `queryModel.currentPage` | `1`                                                        | 1～200，顺序请求                                                                                               |
+| `jxbmc`                  | 全量时空，缺失课程补查时为教学班名称                       | 空；搜索在本地完成                                                                                             |
+| `nd` / `time`            | Unix 秒 / `0`                                              | 不发送                                                                                                         |
+| 其他筛选键               | `GetCourseReq::ToFormData` 发送大量空字符串，包括 sortName | 省略                                                                                                           |
+| 完成条件                 | 单次响应                                                   | 达到学校总数；无总数时请求至空页。最多 200 页、10 万条原始记录；重复页、总数变化或提前空页报错，不保存部分结果 |
+| 进度                     | 日志                                                       | 回调记录页数与原始累计数；读取 totalResult/totalCount/totalSize，兼容数字和数字字符串，不把 count 当作总数     |
+| 错误                     | 显式检查“统一身份认证”“无功能权限”                         | 检查权限文本，其余靠 HTTP/JSON/字段解析报错                                                                    |
 
 Rust 已启用 reqwest gzip 功能，自动协商并解压响应；实际学校响应是否压缩仍待验证。本地模拟接口覆盖 5193 条单次返回、受限分页、缺少总数、异常分页及 gzip 解压。
 
@@ -166,7 +166,7 @@ Go 读写 `{items:[…]}`；Rust `parse_courses` 接受该包装或数组，保�
 
 导入路径额外拒绝空列表和缺失 ID。在线 `courses` 直接调用 `normalize_courses`，并不经过 `parse_courses` 的全部校验，不能说所有入口的校验完全相同。
 
-本机课程资料此前报告为 5193 条、合并后 4450 班；这是历史界面检查记录，不算本次重新运行 Rust 得出的结果。
+本地模拟接口用 5193 条记录验证大页下载；课程合并规则由独立单元测试覆盖。
 
 ### 5.4 选课页面配置
 
@@ -200,15 +200,15 @@ Go 判定 `tmpList` 非空即可。Rust 要求数组中存在完全相同的 `jx
 
 ### 6.2 提交表单的完整差异
 
-| 字段 | Go 选课 | Rust 选课 | Go 退课 | Rust 退课 |
-|---|---|---|---|---|
-| `jxb_ids` / `kch_id` | 操作 ID / 课程 ID | 同 | 同 | 同 |
-| `xkxnm` / `xkxqm` | 不发送 | 配置学期 | 配置学期 | 同 |
-| `qz` | `0` | `0` | 不发送 | `0` |
-| `xkkz_id` | 类型对应控制 ID | 同 | 不发送 | 控制 ID |
-| `njdm_id` / `zyh_id` | 主修填值，其他类型发送空字符串 | 主修填本人值，其他类型发送空字符串 | 不发送 | 与 Rust 选课相同 |
-| `njdm_id_xs` / `zyh_id_xs` | 本人年级 / 专业 | 同 | 不发送 | 本人年级 / 专业 |
-| 字段总数 | 8 | 10 | 4 | 10 |
+| 字段                       | Go 选课                        | Rust 选课                          | Go 退课  | Rust 退课        |
+| -------------------------- | ------------------------------ | ---------------------------------- | -------- | ---------------- |
+| `jxb_ids` / `kch_id`       | 操作 ID / 课程 ID              | 同                                 | 同       | 同               |
+| `xkxnm` / `xkxqm`          | 不发送                         | 配置学期                           | 配置学期 | 同               |
+| `qz`                       | `0`                            | `0`                                | 不发送   | `0`              |
+| `xkkz_id`                  | 类型对应控制 ID                | 同                                 | 不发送   | 控制 ID          |
+| `njdm_id` / `zyh_id`       | 主修填值，其他类型发送空字符串 | 主修填本人值，其他类型发送空字符串 | 不发送   | 与 Rust 选课相同 |
+| `njdm_id_xs` / `zyh_id_xs` | 本人年级 / 专业                | 同                                 | 不发送   | 本人年级 / 专业  |
+| 字段总数                   | 8                              | 10                                 | 4        | 10               |
 
 这里“发送空字符串”与“不发送字段”不同：Go `ToFormData` 没有按类型删除键。Rust `submit` 对选退课复用 `prepare` 生成的同一份表单，没有收敛退课字段。
 
@@ -218,14 +218,14 @@ Go 主修且 `CrossGradeEnabled=1` 时，从课程 `jxbzc` 前两位推导年级
 
 ### 6.3 结果类型
 
-| 学校回复 | Go 当前行为 | Rust 当前行为 |
-|---|---|---|
-| 选课 `{"flag":"1"}` | 打印成功，返回 nil | `Success` |
-| 选课 `{"flag":"0","msg":"…"}` | 打印失败，但仍返回 nil | `Rejected`，记录原因，消耗该任务 |
-| 选课其他可解析 flag | 打印失败，但仍返回 nil | `Unknown`，结束整轮 |
-| 退课 JSON 字符串 `"1"` | 精确比较原始文本后打印成功 | JSON 解析后比较字符串，`Success` |
-| 退课其他响应 | 打印失败；无底层错误时返回 nil | **全部 `Unknown`**，结束整轮 |
-| 提交网络异常 / 超时 | 返回 error，由上层决定继续/重登 | `submit` 统一转为 `Unknown` |
+| 学校回复                      | Go 当前行为                     | Rust 当前行为                    |
+| ----------------------------- | ------------------------------- | -------------------------------- |
+| 选课 `{"flag":"1"}`           | 打印成功，返回 nil              | `Success`                        |
+| 选课 `{"flag":"0","msg":"…"}` | 打印失败，但仍返回 nil          | `Rejected`，记录原因，消耗该任务 |
+| 选课其他可解析 flag           | 打印失败，但仍返回 nil          | `Unknown`，结束整轮              |
+| 退课 JSON 字符串 `"1"`        | 精确比较原始文本后打印成功      | JSON 解析后比较字符串，`Success` |
+| 退课其他响应                  | 打印失败；无底层错误时返回 nil  | **全部 `Unknown`**，结束整轮     |
+| 提交网络异常 / 超时           | 返回 error，由上层决定继续/重登 | `submit` 统一转为 `Unknown`      |
 
 Rust 选课要求 flag 为字符串；数值 `1` 不是成功。Rust 的 JSON 退课解析允许外层空白，Go 原始文本精确比较不允许，成功判定也并非字节级一致。
 
@@ -237,19 +237,19 @@ Go `StartWaitCourse` 只检查 `HandleCourse` 是否返回 error；由于明确 
 
 ## 7. 任务调度与生命周期
 
-| 方面 | Go | Rust 当前实现 |
-|---|---|---|
-| 单次任务模型 | 有序配置中每课为选/退标志 | 命名清单，每项为可选 course + drops 数组 |
-| 单次顺序 | 遍历配置顺序 | 按清单逐项：该项 drops 依次完成，再选 course |
-| 蹲课查询 | 每门目标课一个 goroutine，各自等待 | 按 4 项分批并发；一批全部结束再查下一批 |
-| 蹲课提交 | 各 goroutine 自行提交，可并发 | 全部批次查询结束后串行提交 |
-| 蹲课提交顺序 | 不保证全局清单顺序 | 每批按 `JoinSet::join_next` 完成顺序加入 ready，**也不是严格清单顺序** |
-| 查询失败 | 非登录过期可通知并继续；过期尝试重新登录 | 结束整轮 |
-| 准备失败 | 由上层按错误处理 | 记录后消耗本次选课任务；蹲课也不会保留到下一轮 |
-| 明确选课拒绝 | 见上一节返回值问题 | 消耗该任务，继续其他任务 |
-| 重登 | 蹲课中途过期重新登录 | 启动自动登录、计划开始前重登；没有中途过期重登 |
-| 页面关闭 | Go Web 主要编辑配置 | 页面关闭不主动停止 Rust 后台任务 |
-| 恢复 | 配置中存在课程标志更新 | pending 在内存、执行进度不自动恢复；日志按运行批次保存为 JSONL，并提供分页查询 |
+| 方面         | Go                                       | Rust 当前实现                                                                  |
+| ------------ | ---------------------------------------- | ------------------------------------------------------------------------------ |
+| 单次任务模型 | 有序配置中每课为选/退标志                | 命名清单，每项为可选 course + drops 数组                                       |
+| 单次顺序     | 遍历配置顺序                             | 按清单逐项：该项 drops 依次完成，再选 course                                   |
+| 蹲课查询     | 每门目标课一个 goroutine，各自等待       | 按 4 项分批并发；一批全部结束再查下一批                                        |
+| 蹲课提交     | 各 goroutine 自行提交，可并发            | 全部批次查询结束后串行提交                                                     |
+| 蹲课提交顺序 | 不保证全局清单顺序                       | 每批按 `JoinSet::join_next` 完成顺序加入 ready，**也不是严格清单顺序**         |
+| 查询失败     | 非登录过期可通知并继续；过期尝试重新登录 | 结束整轮                                                                       |
+| 准备失败     | 由上层按错误处理                         | 记录后消耗本次选课任务；蹲课也不会保留到下一轮                                 |
+| 明确选课拒绝 | 见上一节返回值问题                       | 消耗该任务，继续其他任务                                                       |
+| 重登         | 蹲课中途过期重新登录                     | 启动自动登录、计划开始前重登；没有中途过期重登                                 |
+| 页面关闭     | Go Web 主要编辑配置                      | 页面关闭不主动停止 Rust 后台任务                                               |
+| 恢复         | 配置中存在课程标志更新                   | pending 在内存、执行进度不自动恢复；日志按运行批次保存为 JSONL，并提供分页查询 |
 
 Rust 每清单最多 100 个任务项；一个任务项可含多个退课，因此不等于最多 100 次学校操作。同一清单所有选/退教学班名称全局去重。蹲课只能是纯选课任务。
 
@@ -275,38 +275,38 @@ Go Web 默认从 6688 起找可用端口，监听 `:端口`；主要是 `/getCon
 
 Rust `router` 提供的本地接口如下，学校并不提供这些 `/api/*`：
 
-| 路径 | 方法 | 用途 |
-|---|---|---|
-| `/api/health`、`/api/snapshot` | GET | 服务状态与当前运行快照 |
-| `/api/settings` | GET / POST | 读取/保存多清单配置 |
-| `/api/courses` | GET | 本地课程缓存 |
-| `/api/courses/import`、`/api/courses/fetch` | POST | 导入/从学校获取课程 |
-| `/api/credentials`、`/api/ua` | GET / POST | 凭证与 UA 配置 |
-| `/api/credentials/clear` | POST | 删除凭证文件 |
-| `/api/login`、`/api/logout` | POST | 登录/移除本机会话 |
-| `/api/login/qr/start`、`/poll`、`/cancel` | POST | 扫码会话；后两项是同一 qr 前缀下的路径 |
-| `/api/tasks/start`、`/api/tasks/stop` | POST | 启动/停止任务 |
-| `/api/shutdown` | POST | 退出本地服务 |
+| 路径                                        | 方法       | 用途                                   |
+| ------------------------------------------- | ---------- | -------------------------------------- |
+| `/api/health`、`/api/snapshot`              | GET        | 服务状态与当前运行快照                 |
+| `/api/settings`                             | GET / POST | 读取/保存多清单配置                    |
+| `/api/courses`                              | GET        | 本地课程缓存                           |
+| `/api/courses/import`、`/api/courses/fetch` | POST       | 导入/从学校获取课程                    |
+| `/api/credentials`、`/api/ua`               | GET / POST | 凭证与 UA 配置                         |
+| `/api/credentials/clear`                    | POST       | 删除凭证文件                           |
+| `/api/login`、`/api/logout`                 | POST       | 登录/移除本机会话                      |
+| `/api/login/qr/start`、`/poll`、`/cancel`   | POST       | 扫码会话；后两项是同一 qr 前缀下的路径 |
+| `/api/tasks/start`、`/api/tasks/stop`       | POST       | 启动/停止任务                          |
+| `/api/shutdown`                             | POST       | 退出本地服务                           |
 
 本机 POST 请求结构见 `bridge.ts`，例如启动为 `{settings, list_index}`。界面确认弹窗属于前端流程，后端没有独立确认票据。当前 router 没有应用级认证中间件，GET credentials 会返回保存的凭据；监听回环地址限制了网络入口，但不是本机调用者身份验证。本文不把它描述为可公开部署的服务。
 
 数据默认在**可执行文件旁** `data/`，可用 `HDU_DATA_DIR` 覆盖；开发模式也不等于固定写在源码根目录。`migrate_portable_data` 尝试从 `ProjectDirs` 得出的旧目录复制四个文件，目标存在就不覆盖，没有解析 Go config 的迁移器。
 
-| 数据 / 功能 | 当前对应情况 |
-|---|---|
-| Go `config.json` | Rust 分成 `settings.json/credentials.json/ua.json`，不是整体格式兼容 |
-| 凭证 | Rust 明文 JSON；Unix 保存时尝试设置 0600；Cookie Jar 本身仍在内存 |
-| 主题 | 前端 localStorage 的 `hdu-theme`，不是 settings.json；复制 data 不包含浏览器主题 |
-| 旧 Rust 任务格式 | `CourseTask` 支持旧 `{course,action}` 转换；不能据此宣称所有历史 Settings 格式均完整迁移 |
-| Go Web 配置编辑 | 已由 React + 本地 API 替代，不属于完全未实现 |
-| 课程 Excel 导出 | Go 有，当前 Rust 无 |
-| SMTP 通知 | Go 有，当前 Rust 无 |
-| 跨年级参数替换、班号查专业 | Go 有，当前 Rust 无对应流程 |
-| 蹲课中途过期重登 | Go 有，当前 Rust 无 |
-| 版本查询 | Go `GetReleases/VersionUpdate` 有，当前 Rust 无 |
-| 选课页面配置磁盘缓存 | Go 有，Rust 改为每轮读取 |
-| 验证码交互 | 当前两版调用流程均未实现 |
-| 自动排课/时间冲突识别 | 当前 Rust 未实现；已有的是用户手动配对先退课程 |
+| 数据 / 功能                | 当前对应情况                                                                             |
+| -------------------------- | ---------------------------------------------------------------------------------------- |
+| Go `config.json`           | Rust 分成 `settings.json/credentials.json/ua.json`，不是整体格式兼容                     |
+| 凭证                       | Rust 明文 JSON；Unix 保存时尝试设置 0600；Cookie Jar 本身仍在内存                        |
+| 主题                       | 前端 localStorage 的 `hdu-theme`，不是 settings.json；复制 data 不包含浏览器主题         |
+| 旧 Rust 任务格式           | `CourseTask` 支持旧 `{course,action}` 转换；不能据此宣称所有历史 Settings 格式均完整迁移 |
+| Go Web 配置编辑            | 已由 React + 本地 API 替代，不属于完全未实现                                             |
+| 课程 Excel 导出            | Go 有，当前 Rust 无                                                                      |
+| SMTP 通知                  | Go 有，当前 Rust 无                                                                      |
+| 跨年级参数替换、班号查专业 | Go 有，当前 Rust 无对应流程                                                              |
+| 蹲课中途过期重登           | Go 有，当前 Rust 无                                                                      |
+| 版本查询                   | Go `GetReleases/VersionUpdate` 有，当前 Rust 无                                          |
+| 选课页面配置磁盘缓存       | Go 有，Rust 改为每轮读取                                                                 |
+| 验证码交互                 | 当前两版调用流程均未实现                                                                 |
+| 自动排课/时间冲突识别      | 当前 Rust 未实现；已有的是用户手动配对先退课程                                           |
 
 ## 9. 可执行的验证计划
 
@@ -336,12 +336,10 @@ Rust `router` 提供的本地接口如下，学校并不提供这些 `/api/*`：
 
 后续维护应在协议或调度代码变化时更新对应节；学校联调结果单独记录日期、脱敏样本和验证范围。不要把功能说明、静态分析与真实验证混写为一个完成状态。
 
-
-目录维护说明：旧 Go 源码、旧 Tauri 预览和交接文件已移除，最新 Rust/React 工程已提升到仓库根目录。本文保留协议差异作为维护依据。
-
-
+源码职责及目录说明见 [维护指南](architecture.md)。
 
 日志更新：`run_log.rs` 保存每次运行，`GET /api/runs` 列出批次，`GET /api/runs/{id}?before=N` 按游标读取最多 500 条。新任务只更新当前运行快照，旧 JSONL 不会删除；未实现任务断点恢复。
 
-
 课程结果日志更新：Progress 增加 `course_name/schedule/action`，选课和退课日志保存教学班快照及带时区时间。无 action 的旧日志只标为操作未记录，不推断成功类型。这不改变学校响应成功的判定规则。
+
+任务清单交换格式：`POST /api/tasks/import` 解析并校验整个文件，返回清单数组；前端追加到编辑中的清单，用户保存后才写入设置，不触发执行。格式与示例见 [任务清单格式](task-list-format.md)。课程及任务启动等既有 API 路径在模块拆分后保持不变。

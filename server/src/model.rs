@@ -96,8 +96,7 @@ pub struct Settings {
     /// Query interval in milliseconds (canonical unit; the UI lets the user
     /// pick ms / s / min / h). Only used by watch-mode lists.
     pub interval_ms: u64,
-    /// Random jitter (ms) added to the watch interval on each wait, so the
-    /// timing looks hand-driven at the critical moment. 0 disables it.
+    /// Maximum random offset in milliseconds around the watch interval; 0 disables jitter.
     pub jitter_ms: u64,
     /// MT19937 seed for the jitter (default 1919810).
     pub jitter_seed: u64,
@@ -142,23 +141,25 @@ impl Settings {
         }
         let prefix = format!("({}-{}-{})-", self.year, self.year + 1, self.term);
         let mut seen = std::collections::HashSet::new();
-        let check = |course: &Course, seen: &mut std::collections::HashSet<String>| -> Result<(), String> {
-            if !course.jxbmc.starts_with(&prefix) {
-                return Err(format!("教学班与学期不匹配：{}", course.jxbmc));
-            }
-            if course.jxb_id.is_empty() || course.kch_id.is_empty() {
-                return Err("课程缺少内部编号，请重新获取课程资料".into());
-            }
-            if !seen.insert(course.jxbmc.clone()) {
-                return Err(format!("同一清单内教学班重复：{}", course.jxbmc));
-            }
-            Ok(())
-        };
+        let check =
+            |course: &Course, seen: &mut std::collections::HashSet<String>| -> Result<(), String> {
+                if !course.jxbmc.starts_with(&prefix) {
+                    return Err(format!("教学班与学期不匹配：{}", course.jxbmc));
+                }
+                if course.jxb_id.is_empty() || course.kch_id.is_empty() {
+                    return Err("课程缺少内部编号，请重新获取课程资料".into());
+                }
+                if !seen.insert(course.jxbmc.clone()) {
+                    return Err(format!("同一清单内教学班重复：{}", course.jxbmc));
+                }
+                Ok(())
+            };
         for task in &list.tasks {
             if task.course.is_none() && task.drops.is_empty() {
                 return Err("存在既没有要选课程也没有要退课程的空任务".into());
             }
-            if matches!(list.mode, Mode::Watch) && (task.course.is_none() || !task.drops.is_empty()) {
+            if matches!(list.mode, Mode::Watch) && (task.course.is_none() || !task.drops.is_empty())
+            {
                 return Err("蹲课仅支持纯选课；带退课或仅退课的任务请使用单次模式".into());
             }
             if let Some(course) = &task.course {
@@ -299,7 +300,11 @@ impl StoredCredentials {
         };
         match method {
             LoginMethod::Cas if !self.cas_username.is_empty() && !self.cas_password.is_empty() => {
-                Some(make("cas", self.cas_username.clone(), self.cas_password.clone()))
+                Some(make(
+                    "cas",
+                    self.cas_username.clone(),
+                    self.cas_password.clone(),
+                ))
             }
             LoginMethod::Newjw
                 if !self.newjw_username.is_empty() && !self.newjw_password.is_empty() =>
@@ -367,7 +372,7 @@ impl StoredCredentials {
     }
 }
 
-/// User-Agent configuration for the HTTP client (anti-script detection).
+/// User-Agent configuration sent with school HTTP requests.
 /// Modes: `browser` (the user's actual browser UA, default), `fixed` (built
 /// from OS + browser + version), `rotate` (a list) and `generate` (MT19937
 /// with a user seed).
@@ -401,7 +406,10 @@ impl Default for UaConfig {
 
 impl UaConfig {
     pub fn normalize(&mut self) {
-        if !matches!(self.mode.as_str(), "browser" | "fixed" | "rotate" | "generate") {
+        if !matches!(
+            self.mode.as_str(),
+            "browser" | "fixed" | "rotate" | "generate"
+        ) {
             self.mode = "browser".into();
         }
         self.browser_ua = self.browser_ua.trim().to_string();
@@ -513,7 +521,12 @@ mod tests {
     use super::*;
     #[test]
     fn course_events_keep_operation_and_identity_without_course_cache() {
-        let course = Course { jxbmc: "class-01".into(), kcmc: "数据结构".into(), sksj: "星期三3-4节".into(), ..Default::default() };
+        let course = Course {
+            jxbmc: "class-01".into(),
+            kcmc: "数据结构".into(),
+            sksj: "星期三3-4节".into(),
+            ..Default::default()
+        };
         for action in [Action::Select, Action::Cancel] {
             let event = Progress::for_course(&course, action, "success", "学校已返回成功");
             let saved = serde_json::to_string(&event).unwrap();
@@ -524,7 +537,10 @@ mod tests {
             assert!(restored.action.is_some());
             assert!(chrono::DateTime::parse_from_rfc3339(&restored.time).is_ok());
         }
-        let legacy: Progress = serde_json::from_str(r#"{"course_id":"old","status":"success","message":"ok","time":"10:00:00"}"#).unwrap();
+        let legacy: Progress = serde_json::from_str(
+            r#"{"course_id":"old","status":"success","message":"ok","time":"10:00:00"}"#,
+        )
+        .unwrap();
         assert!(legacy.action.is_none());
         assert!(legacy.course_name.is_empty());
     }
@@ -598,17 +614,26 @@ mod tests {
         // A watch task with drops is invalid.
         s.lists[0].tasks.push(CourseTask {
             course: Some(course.clone()),
-            drops: vec![Course { jxbmc: "(2026-2027-1)-A-02".into(), ..course.clone() }],
+            drops: vec![Course {
+                jxbmc: "(2026-2027-1)-A-02".into(),
+                ..course.clone()
+            }],
         });
         assert!(s.validate(true, 0).is_err());
         // A pure-drop task in watch mode is invalid too.
-        s.lists[0].tasks = vec![CourseTask { course: None, drops: vec![course.clone()] }];
+        s.lists[0].tasks = vec![CourseTask {
+            course: None,
+            drops: vec![course.clone()],
+        }];
         assert!(s.validate(true, 0).is_err());
         // Once mode allows paired tasks.
         s.lists[0].mode = Mode::Once;
         s.lists[0].tasks = vec![CourseTask {
             course: Some(course.clone()),
-            drops: vec![Course { jxbmc: "(2026-2027-1)-A-02".into(), ..course.clone() }],
+            drops: vec![Course {
+                jxbmc: "(2026-2027-1)-A-02".into(),
+                ..course.clone()
+            }],
         }];
         assert!(s.validate(true, 0).is_ok());
         s.term = 2;
@@ -625,20 +650,38 @@ mod tests {
             ..Default::default()
         };
         // Empty task.
-        s.lists[0].tasks = vec![CourseTask { course: None, drops: vec![] }];
+        s.lists[0].tasks = vec![CourseTask {
+            course: None,
+            drops: vec![],
+        }];
         assert!(s.validate(false, 0).is_err());
         // Same course as select and as drop → duplicate.
         s.lists[0].tasks = vec![
-            CourseTask { course: Some(course.clone()), drops: vec![] },
-            CourseTask { course: None, drops: vec![course.clone()] },
+            CourseTask {
+                course: Some(course.clone()),
+                drops: vec![],
+            },
+            CourseTask {
+                course: None,
+                drops: vec![course.clone()],
+            },
         ];
         assert!(s.validate(false, 0).is_err());
         // Two drops of the same course → duplicate.
-        s.lists[0].tasks = vec![CourseTask { course: None, drops: vec![course.clone(), course.clone()] }];
+        s.lists[0].tasks = vec![CourseTask {
+            course: None,
+            drops: vec![course.clone(), course.clone()],
+        }];
         assert!(s.validate(false, 0).is_err());
         // Distinct courses pass.
-        let other = Course { jxbmc: "(2026-2027-1)-A-02".into(), ..course.clone() };
-        s.lists[0].tasks = vec![CourseTask { course: Some(other), drops: vec![course] }];
+        let other = Course {
+            jxbmc: "(2026-2027-1)-A-02".into(),
+            ..course.clone()
+        };
+        s.lists[0].tasks = vec![CourseTask {
+            course: Some(other),
+            drops: vec![course],
+        }];
         assert!(s.validate(false, 0).is_ok());
     }
     #[test]
@@ -655,7 +698,10 @@ mod tests {
         assert_eq!(s.lists[0].tasks[0].course, None);
         assert_eq!(s.lists[0].tasks[0].drops.len(), 1);
         assert_eq!(s.lists[0].tasks[0].drops[0].jxbmc, "(2026-2027-1)-A-01");
-        assert_eq!(s.lists[0].tasks[1].course.as_ref().unwrap().jxbmc, "(2026-2027-1)-A-02");
+        assert_eq!(
+            s.lists[0].tasks[1].course.as_ref().unwrap().jxbmc,
+            "(2026-2027-1)-A-02"
+        );
     }
     #[test]
     fn multiple_lists_validate_independently() {
@@ -666,8 +712,15 @@ mod tests {
             kch_id: "a".into(),
             ..Default::default()
         };
-        s.lists[0].tasks.push(CourseTask { course: Some(course.clone()), drops: vec![] });
-        s.lists.push(TaskList { name: "抢课清单".into(), mode: Mode::Once, tasks: vec![] });
+        s.lists[0].tasks.push(CourseTask {
+            course: Some(course.clone()),
+            drops: vec![],
+        });
+        s.lists.push(TaskList {
+            name: "抢课清单".into(),
+            mode: Mode::Once,
+            tasks: vec![],
+        });
         assert!(s.validate(true, 0).is_ok());
         assert!(s.validate(true, 1).is_err()); // second list empty when starting
         assert!(s.validate(true, 2).is_err()); // out of range

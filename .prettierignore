@@ -1,0 +1,6 @@
+node_modules/
+server/target/
+dist/
+package-lock.json
+docs/README.original.md
+**/data/
