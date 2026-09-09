@@ -7,6 +7,7 @@
 //! credentials only in memory.
 mod client;
 mod model;
+mod run_log;
 
 use axum::{
     extract::State,
@@ -41,6 +42,8 @@ struct Inner {
     cancel: Option<CancellationToken>,
     authenticating: bool,
     history: Vec<Progress>,
+    run_log: Option<run_log::RunLog>,
+    log_error: Option<String>,
     /// Pending DingTalk QR login session (id, execution and the shared HTTP
     /// client with its cookie jar).
     qr: Option<QrSession>,
@@ -84,6 +87,7 @@ impl AppState {
 
 #[derive(Serialize)]
 struct Snapshot {
+    log_error: Option<String>,
     running: bool,
     logged_in: bool,
     history: Vec<Progress>,
@@ -91,13 +95,17 @@ struct Snapshot {
 }
 
 fn publish(state: &AppState, event: Progress) {
-    {
-        let mut inner = state.lock();
-        inner.history.push(event.clone());
-        if inner.history.len() > HISTORY_LIMIT {
-            inner.history.remove(0);
+    let mut inner = state.lock();
+    if inner.log_error.is_none() {
+        if let Some(log) = inner.run_log.as_mut() {
+            if let Err(error) = log.append(&event) {
+                inner.log_error = Some(error);
+                if let Some(token) = &inner.cancel { token.cancel(); }
+            }
         }
     }
+    inner.history.push(event);
+    if inner.history.len() > HISTORY_LIMIT { inner.history.remove(0); }
 }
 
 // ---------------------------------------------------------------------------
@@ -212,6 +220,7 @@ async fn health() -> Api<serde_json::Value> {
 async fn snapshot(State(state): State<AppState>) -> Api<Snapshot> {
     let i = state.lock();
     Ok(Json(Snapshot {
+        log_error: i.log_error.clone(),
         running: i.cancel.is_some(),
         logged_in: i.client.is_some(),
         history: i.history.clone(),
@@ -551,6 +560,9 @@ async fn tasks_start(State(state): State<AppState>, Json(arg): Json<StartArg>) -
             return Err(ApiError("已有任务正在运行".into()));
         }
         client = i.client.clone().ok_or(ApiError("请先登录学校系统".into()))?;
+        let log = run_log::RunLog::create(&data_path("logs")?, &list.name)?;
+        i.run_log = Some(log);
+        i.log_error = None;
         i.cancel = Some(token.clone());
         i.history.clear();
     }
