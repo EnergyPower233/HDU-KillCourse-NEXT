@@ -1,4 +1,4 @@
-import { defaults, parseCourseFile, type Course, type Credentials, type QrPoll, type Settings, type Snapshot, type StoredCredentials, type UaConfig } from './types';
+import { defaults, parseCourseFile, type TaskList, type Course, type Credentials, type QrPoll, type Settings, type Snapshot, type StoredCredentials, type UaConfig } from './types';
 import type { RunInfo, RunPage } from './types';
 
 // The UI always runs in a browser against the local Rust server. There is no
@@ -40,6 +40,7 @@ export const api = {
   clearCredentials: () => request<void>('/api/credentials/clear', { body: {} }),
   loadUa: () => request<UaConfig>('/api/ua'),
   saveUa: (ua: UaConfig) => request<void>('/api/ua', { body: { ua } }),
+  importTaskLists: (text: string, settings: Settings) => request<TaskList[]>('/api/tasks/import', { body: { text, settings } }),
   startTasks: (settings: Settings, list_index: number) => request<void>('/api/tasks/start', { body: { settings, list_index } }),
   stopTasks: () => request<void>('/api/tasks/stop', { body: {} }),
   shutdown: () => request<void>('/api/shutdown', { body: {} }),

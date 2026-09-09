@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "year": 2026,
+  "term": 1,
+  "lists": [
+    {
+      "name": "选课示例（请替换课程编号）",
+      "mode": "once",
+      "tasks": [
+        {
+          "course": {
+            "jxbmc": "(2026-2027-1)-REPLACE-CLASS",
+            "kch_id": "REPLACE-COURSE-ID",
+            "jxb_id": "REPLACE-CLASS-ID",
+            "kcmc": "替换为课程名",
+            "kklxmc": "主修课程",
+            "sksj": "替换为上课时间"
+          },
+          "drops": []
+        }
+      ]
+    }
+  ]
+}

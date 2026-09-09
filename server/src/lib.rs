@@ -8,6 +8,7 @@
 mod client;
 mod model;
 mod run_log;
+mod task_import;
 
 use axum::{
     extract::{State, Path, Query},
@@ -212,6 +213,16 @@ struct LoginArg {
 #[derive(Deserialize)]
 struct ImportArg {
     text: String,
+}
+
+#[derive(Deserialize)]
+struct TaskImportArg {
+    text: String,
+    settings: Settings,
+}
+
+async fn tasks_import(Json(arg): Json<TaskImportArg>) -> Api<Vec<TaskList>> {
+    task_import::parse_task_file(&arg.text, &arg.settings).map(Json).map_err(ApiError)
 }
 
 async fn health() -> Api<serde_json::Value> {
@@ -1003,6 +1014,7 @@ fn router(state: AppState) -> Router {
         .route("/api/login/qr/poll", post(login_qr_poll))
         .route("/api/login/qr/cancel", post(login_qr_cancel))
         .route("/api/logout", post(logout))
+        .route("/api/tasks/import", post(tasks_import))
         .route("/api/tasks/start", post(tasks_start))
         .route("/api/tasks/stop", post(tasks_stop))
         .route("/api/shutdown", post(shutdown))
@@ -1080,6 +1092,28 @@ mod tests {
     fn test_app() -> Router {
         let (state, _rx) = AppState::new();
         router(state)
+    }
+
+    #[tokio::test]
+    async fn task_import_returns_lists_without_starting_a_run() {
+        let app = test_app();
+        let body = serde_json::json!({
+            "text": include_str!("../../examples/task-lists.json"),
+            "settings": Settings::default(),
+        });
+        let response = app.clone().oneshot(Request::builder().method("POST")
+            .uri("/api/tasks/import").header("content-type", "application/json")
+            .body(Body::from(body.to_string())).unwrap()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let lists: Vec<TaskList> = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(lists.len(), 1);
+        assert_eq!(lists[0].tasks.len(), 1);
+        let response = app.oneshot(Request::builder().uri("/api/snapshot").body(Body::empty()).unwrap()).await.unwrap();
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let snapshot: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(snapshot["running"], false);
+        assert!(snapshot["current_run"].is_null());
     }
 
     #[tokio::test]

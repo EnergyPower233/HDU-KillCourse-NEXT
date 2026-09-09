@@ -59,6 +59,7 @@ export default function App() {
   const qrResolve = useRef<((ok: boolean) => void) | null>(null);
   const qrAutoRef = useRef(false);
   const input = useRef<HTMLInputElement>(null);
+  const taskInput = useRef<HTMLInputElement>(null);
   const offline = backend === false;
   const locked = snapshot.running || !!busy || offline;
   const toast = (text: string, error = false) => setNotice({ text, error });
@@ -336,6 +337,23 @@ export default function App() {
       setCourses(result); setPage(0); toast(`已导入 ${result.length.toLocaleString()} 个教学班`);
     });
   }
+  async function importTaskFile(file?: File) {
+    if (!file) return;
+    if (file.size > 1024 * 1024) { toast('任务清单文件不能超过 1 MB', true); return; }
+    await perform('导入任务清单中', async () => {
+      const lists = await api.importTaskLists(await file.text(), settings);
+      setSettings(current => ({ ...current, lists: [...current.lists, ...lists], active_list: current.lists.length }));
+      setSaved(false);
+      toast(`已追加 ${lists.length} 个清单，请核对后保存清单`);
+    });
+  }
+  function exportTaskFile() {
+    const blob = new Blob([JSON.stringify({ version: 1, year: settings.year, term: settings.term, lists: [active] }, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url; link.download = 'task-lists.json'; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
   function add(course: Course) {
     if (selected.has(course.jxbmc)) return;
     updateActive({ tasks: [...tasks, { course, drops: [] }] });
@@ -392,7 +410,11 @@ export default function App() {
       <main>
         {snapshot.log_error && <div className="offline-banner" role="alert"><strong>本地日志保存失败，已请求停止任务：</strong>{snapshot.log_error}</div>}
         {offline && <div className="offline-banner" role="alert"><ShieldCheck size={16}/><span><strong>尚未连接本地服务。</strong>请先启动 HDU-KillCourse NEXT 服务端程序，本页面的登录与选课功能暂不可用。</span></div>}
-        <div className="page-heading"><div><h1>{view === 'courses' ? '把想上的课，安排好。' : view === 'tasks' ? '每一门课，进度清晰。' : view === 'activity' ? '每一步，都有记录。' : '让选课按你的节奏进行。'}</h1><p>{view === 'courses' ? '浏览教学班，建立任务清单，在一个页面里完成选课。' : view === 'tasks' ? '统一管理选退课任务，随时查看学校返回的结果。' : view === 'activity' ? '查询、提交与异常信息会在这里实时更新。' : '设置学期与执行方式，保存后用于下一次任务。'}</p></div><div className="heading-actions">{view === 'courses' && <><button className="button secondary" disabled={locked} onClick={() => input.current?.click()}><ArrowDownToLine size={15}/>导入课程</button><button className="button primary" disabled={locked} onClick={() => snapshot.logged_in ? perform('获取课程中', async () => { setCourses(await api.fetchCourses(settings)); toast('课程资料已更新'); }) : setLoginOpen(true)}>{busy === '获取课程中' ? <><LoaderCircle className="spin" size={15}/>{(() => { const fp = snapshot.fetch_progress; if (fp && fp.page > 0) return fp.total ? `第 ${fp.page} 页 · ${fp.courses}/${fp.total} 门` : `第 ${fp.page} 页 · ${fp.courses} 门`; return `获取课程中 · ${elapsed} 秒`; })()}</> : <><Radio size={15}/>从教务获取</>}</button></>}</div></div>
+        <div className="page-heading"><div><h1>{view === 'courses' ? '把想上的课，安排好。' : view === 'tasks' ? '每一门课，进度清晰。' : view === 'activity' ? '每一步，都有记录。' : '让选课按你的节奏进行。'}</h1><p>{view === 'courses' ? '浏览教学班，建立任务清单，在一个页面里完成选课。' : view === 'tasks' ? '统一管理选退课任务，随时查看学校返回的结果。' : view === 'activity' ? '查询、提交与异常信息会在这里实时更新。' : '设置学期与执行方式，保存后用于下一次任务。'}</p></div><div className="heading-actions">{view === 'tasks' && <>
+          <input ref={taskInput} type="file" accept=".json,application/json" hidden onChange={event => { void importTaskFile(event.target.files?.[0]); event.target.value = ''; }}/>
+          <button className="button secondary" disabled={locked} onClick={() => taskInput.current?.click()}><FileJson size={15}/>导入清单 JSON</button>
+          <button className="button secondary" disabled={locked} onClick={exportTaskFile}>导出当前清单</button>
+        </>}{view === 'courses' && <><button className="button secondary" disabled={locked} onClick={() => input.current?.click()}><ArrowDownToLine size={15}/>导入课程</button><button className="button primary" disabled={locked} onClick={() => snapshot.logged_in ? perform('获取课程中', async () => { setCourses(await api.fetchCourses(settings)); toast('课程资料已更新'); }) : setLoginOpen(true)}>{busy === '获取课程中' ? <><LoaderCircle className="spin" size={15}/>{(() => { const fp = snapshot.fetch_progress; if (fp && fp.page > 0) return fp.total ? `第 ${fp.page} 页 · ${fp.courses}/${fp.total} 门` : `第 ${fp.page} 页 · ${fp.courses} 门`; return `获取课程中 · ${elapsed} 秒`; })()}</> : <><Radio size={15}/>从教务获取</>}</button></>}</div></div>
         <input aria-label="导入 course.json" ref={input} type="file" accept=".json,application/json" hidden onChange={e => { void importFile(e.target.files?.[0]); e.target.value = ''; }}/>
         {notice && <div role={notice.error ? 'alert' : 'status'} className={`notice ${notice.error ? 'notice-error' : ''}`}><span>{notice.text}</span><button aria-label="关闭提示" onClick={() => setNotice(null)}><X size={15}/></button></div>}
 
