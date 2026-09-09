@@ -410,7 +410,7 @@ export default function App() {
       <main>
         {snapshot.log_error && <div className="offline-banner" role="alert"><strong>本地日志保存失败，已请求停止任务：</strong>{snapshot.log_error}</div>}
         {offline && <div className="offline-banner" role="alert"><ShieldCheck size={16}/><span><strong>尚未连接本地服务。</strong>请先启动 HDU-KillCourse NEXT 服务端程序，本页面的登录与选课功能暂不可用。</span></div>}
-        <div className="page-heading"><div><h1>{view === 'courses' ? '把想上的课，安排好。' : view === 'tasks' ? '每一门课，进度清晰。' : view === 'activity' ? '每一步，都有记录。' : '让选课按你的节奏进行。'}</h1><p>{view === 'courses' ? '浏览教学班，建立任务清单，在一个页面里完成选课。' : view === 'tasks' ? '统一管理选退课任务，随时查看学校返回的结果。' : view === 'activity' ? '查询、提交与异常信息会在这里实时更新。' : '设置学期与执行方式，保存后用于下一次任务。'}</p></div><div className="heading-actions">{view === 'tasks' && <>
+        <div className="page-heading"><div><h1>{view === 'courses' ? '课程中心' : view === 'tasks' ? '选课任务' : view === 'activity' ? '运行记录' : '偏好设置'}</h1><p>{view === 'courses' ? '获取或导入课程资料，按课程名、教师或教学班编号搜索，点击 + 加入当前清单。' : view === 'tasks' ? '编辑或导入任务清单，指定先退课程与执行顺序；保存后点击开始任务，核对计划再执行。' : view === 'activity' ? '选择运行批次查看选退课结果；点击「加载更早的 500 条」查看历史记录。' : '设置学年学期、查询间隔与登录顺序，管理本机保存的凭据和请求标识。'}</p></div><div className="heading-actions">{view === 'tasks' && <>
           <input ref={taskInput} type="file" accept=".json,application/json" hidden onChange={event => { void importTaskFile(event.target.files?.[0]); event.target.value = ''; }}/>
           <button className="button secondary" disabled={locked} onClick={() => taskInput.current?.click()}><FileJson size={15}/>导入清单 JSON</button>
           <button className="button secondary" disabled={locked} onClick={exportTaskFile}>导出当前清单</button>
