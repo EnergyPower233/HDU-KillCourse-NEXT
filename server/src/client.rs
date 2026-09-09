@@ -6,7 +6,7 @@ use scraper::{Html, Selector};
 use serde::Deserialize;
 use serde_json::Value;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -45,7 +45,7 @@ pub struct QrResp {
 fn build_http(jar: Arc<Jar>) -> Result<Client, String> {
     Client::builder()
         .cookie_provider(jar)
-        // Slow networks and large course pages (500 rows each) can take a
+        // Slow networks and large course pages can take a
         // while; the original Go client sets no timeout at all. 3 minutes is
         // still bounded so a dead request eventually stops instead of hanging.
         .timeout(Duration::from_secs(180))
@@ -583,41 +583,71 @@ impl SchoolClient {
     pub async fn courses(
         &self,
         settings: &Settings,
+        progress: impl FnMut(usize, usize, Option<usize>),
+    ) -> Result<Vec<Course>, String> {
+        self.courses_from(
+            &format!("{JW}/rwlscx/rwlscx_cxRwlsIndex.html?doType=query&gnmkdm=N1548"),
+            settings,
+            progress,
+        ).await
+    }
+
+    async fn courses_from(
+        &self,
+        url: &str,
+        settings: &Settings,
         mut progress: impl FnMut(usize, usize, Option<usize>),
     ) -> Result<Vec<Course>, String> {
         let mut all = Vec::new();
+        let mut seen_pages = HashSet::new();
+        let mut expected_total = None;
         for page in 1..=200 {
-            let data = self
-                .post(
-                    &format!("{JW}/rwlscx/rwlscx_cxRwlsIndex.html?doType=query&gnmkdm=N1548"),
-                    &form(&[
-                        ("xnm", &settings.year.to_string()),
-                        ("xqm", settings.xqm()),
-                        ("xnmc", &format!("{}-{}", settings.year, settings.year + 1)),
-                        ("xqmc", &settings.term.to_string()),
-                        ("queryModel.showCount", "500"),
-                        ("queryModel.currentPage", &page.to_string()),
-                        ("queryModel.sortOrder", "asc"),
-                        ("_search", "false"),
-                        ("jxbmc", ""),
-                    ]),
-                )
-                .await?;
+            let data = self.post(url, &form(&[
+                ("xnm", &settings.year.to_string()),
+                ("xqm", settings.xqm()),
+                ("xnmc", &format!("{}-{}", settings.year, settings.year + 1)),
+                ("xqmc", &settings.term.to_string()),
+                ("queryModel.showCount", "9999"),
+                ("queryModel.currentPage", &page.to_string()),
+                ("queryModel.sortOrder", "asc"),
+                ("_search", "false"),
+                ("jxbmc", ""),
+            ])).await?;
             if data.contains("无功能权限") {
                 return Err("任务落实查询尚未开放".into());
             }
-            let v = json(&data)?;
-            let rows: Vec<Course> = serde_json::from_value(v["items"].clone())
+            let mut v = json(&data)?;
+            // `count` may describe this page, not the entire catalog.
+            let total = ["totalResult", "totalCount", "totalSize"]
+                .iter()
+                .filter_map(|k| v[*k].as_u64().or_else(|| v[*k].as_str()?.parse().ok()))
+                .next()
+                .and_then(|n| usize::try_from(n).ok());
+            if let Some(total) = total {
+                if expected_total.is_some_and(|old| old != total) {
+                    return Err("下载期间课程总数发生变化，请重新获取，未保存不完整资料".into());
+                }
+                expected_total = Some(total);
+            }
+            let items = v["items"].take();
+            let fingerprint = md5::compute(items.to_string());
+            let rows: Vec<Course> = serde_json::from_value(items)
                 .map_err(|_| "无法读取课程列表，登录可能已过期")?;
             let count = rows.len();
+            if count > 0 && !seen_pages.insert(fingerprint) {
+                return Err("学校返回了重复课程页，未保存不完整资料".into());
+            }
             all.extend(rows);
-            // Report progress. The server may or may not include a total count.
-            let total = ["totalCount", "totalSize", "count"]
-                .iter()
-                .find_map(|k| v[*k].as_u64())
-                .map(|t| t as usize);
-            progress(page, all.len(), total);
-            if count < 500 {
+            if all.len() > 100_000 || expected_total.is_some_and(|n| all.len() > n) {
+                return Err("课程数量超出上限或与学校总数不符，未保存不完整资料".into());
+            }
+            progress(page, all.len(), expected_total);
+            // A server may cap the requested page size. A short page alone
+            // therefore cannot establish completeness; use its total or EOF.
+            if count == 0 || expected_total == Some(all.len()) {
+                if expected_total.is_some_and(|n| all.len() != n) {
+                    return Err("学校提前返回空页，课程数量不足，未保存不完整资料".into());
+                }
                 return if all.is_empty() {
                     Err("该学期没有查到课程".into())
                 } else {
@@ -805,6 +835,93 @@ fn encrypt_cas(key: &str, password: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    async fn fetch_mock_pages(pages: Vec<Value>) -> (Result<Vec<Course>, String>, usize) {
+        use axum::{routing::post, Router};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let calls = Arc::new(AtomicUsize::new(0));
+        let observed = calls.clone();
+        let app = Router::new().route("/courses", post(move |axum::Form(body): axum::Form<HashMap<String, String>>| {
+            let i = observed.fetch_add(1, Ordering::SeqCst);
+            let response = pages.get(i).cloned().unwrap_or_else(|| serde_json::json!({"items": []}));
+            async move {
+                assert_eq!(body["queryModel.showCount"], "9999");
+                assert_eq!(body["queryModel.currentPage"], (i + 1).to_string());
+                axum::Json(response)
+            }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/courses", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = SchoolClient {
+            http: build_http(Arc::new(Jar::default())).unwrap(),
+            grade: String::new(), major: String::new(), ua: DEFAULT_UA.into(),
+        };
+        let result = client.courses_from(&url, &Settings::default(), |_, _, _| {}).await;
+        server.abort();
+        (result, calls.load(Ordering::SeqCst))
+    }
+
+    #[tokio::test]
+    async fn catalog_large_page_and_capped_pages_are_complete() {
+        let rows: Vec<Value> = (0..5193).map(|i| serde_json::json!({"jxbmc": format!("class-{i}")})).collect();
+        let (result, calls) = fetch_mock_pages(vec![serde_json::json!({"items": rows, "totalResult": "5193"})]).await;
+        assert_eq!(result.unwrap().len(), 5193);
+        assert_eq!(calls, 1);
+
+        let (result, calls) = fetch_mock_pages(vec![
+            serde_json::json!({"items": [{"jxbmc": "a"}], "totalCount": 2}),
+            serde_json::json!({"items": [{"jxbmc": "b"}], "totalCount": 2}),
+        ]).await;
+        assert_eq!(result.unwrap().len(), 2);
+        assert_eq!(calls, 2);
+    }
+
+    #[tokio::test]
+    async fn catalog_without_total_waits_for_empty_page() {
+        let (result, calls) = fetch_mock_pages(vec![
+            serde_json::json!({"items": [{"jxbmc": "a"}], "count": 1}),
+            serde_json::json!({"items": [{"jxbmc": "b"}], "count": 1}),
+            serde_json::json!({"items": []}),
+        ]).await;
+        assert_eq!(result.unwrap().len(), 2);
+        assert_eq!(calls, 3);
+    }
+
+    #[tokio::test]
+    async fn catalog_rejects_truncation_repeated_pages_and_changing_totals() {
+        for pages in [
+            vec![serde_json::json!({"items": [{"jxbmc": "a"}], "totalSize": 2}), serde_json::json!({"items": []})],
+            vec![serde_json::json!({"items": [{"jxbmc": "a"}]}), serde_json::json!({"items": [{"jxbmc": "a"}]})],
+            vec![serde_json::json!({"items": [{"jxbmc": "a"}], "totalResult": 2}), serde_json::json!({"items": [{"jxbmc": "b"}], "totalResult": 3})],
+            vec![serde_json::json!({"items": [{"jxbmc": "a"}], "totalResult": 0})],
+            vec![serde_json::json!({"items": []})],
+            vec![serde_json::json!({"message": "login expired"})],
+        ] {
+            assert!(fetch_mock_pages(pages).await.0.is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn school_client_negotiates_and_decodes_gzip() {
+        use axum::{routing::post, Router};
+        // gzip-compressed {"items":[],"totalResult":0}; no school data.
+        let compressed: Vec<u8> = vec![31, 139, 8, 0, 0, 0, 0, 0, 2, 255, 171, 86, 202, 44, 73, 205, 45, 86, 178, 138, 142, 213, 81, 42, 201, 47, 73, 204, 9, 74, 45, 46, 205, 41, 81, 178, 50, 168, 5, 0, 133, 177, 218, 180, 28, 0, 0, 0];
+        let app = Router::new().route("/gzip", post(move |headers: axum::http::HeaderMap| async move {
+            assert!(headers["accept-encoding"].to_str().unwrap().contains("gzip"));
+            ([("content-encoding", "gzip")], compressed)
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/gzip", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = SchoolClient {
+            http: build_http(Arc::new(Jar::default())).unwrap(),
+            grade: String::new(), major: String::new(), ua: DEFAULT_UA.into(),
+        };
+        let result = client.post(&url, &Form::new()).await;
+        server.abort();
+        assert_eq!(result.unwrap(), r#"{"items":[],"totalResult":0}"#);
+    }
+
     #[test]
     fn empty_optional_form_values_are_valid() {
         assert_eq!(
