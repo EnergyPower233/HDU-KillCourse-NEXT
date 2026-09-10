@@ -383,7 +383,7 @@ export function SettingsPage({
         <div className="info-version">
           Rust 本地服务 + React 浏览器界面
           <br />
-          Browser Edition 0.2.0
+          Browser Edition 0.3.0
         </div>
       </section>
     </div>

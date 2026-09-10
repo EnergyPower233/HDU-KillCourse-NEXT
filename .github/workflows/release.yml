@@ -92,7 +92,7 @@ jobs:
           New-Item -ItemType Directory -Path $package, 'artifacts' -Force | Out-Null
           Copy-Item -LiteralPath "server/target/$env:TARGET/release/hdu-course-server.exe" -Destination $package
           Copy-Item -LiteralPath README.md,LICENSE -Destination $package
-          Copy-Item -LiteralPath docs -Destination $package -Recurse
+          Copy-Item -LiteralPath docs,examples -Destination $package -Recurse
           Copy-Item -LiteralPath CONTRIBUTING.md -Destination $package
           Compress-Archive -LiteralPath $package -DestinationPath "artifacts/$name.zip"
       - name: Package macOS and Linux
@@ -107,7 +107,7 @@ jobs:
           cp "server/target/$TARGET/release/hdu-course-server" "staging/$name/"
           chmod +x "staging/$name/hdu-course-server"
           cp README.md LICENSE CONTRIBUTING.md "staging/$name/"
-          cp -R docs "staging/$name/"
+          cp -R docs examples "staging/$name/"
           tar -czf "artifacts/$name.tar.gz" -C staging "$name"
       - uses: actions/upload-artifact@v6
         with:
