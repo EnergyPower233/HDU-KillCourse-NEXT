@@ -160,7 +160,7 @@ examples/          可编辑的 JSON 示例
 
 本项目使用 Apache-2.0 许可，完整许可见 [LICENSE](LICENSE)。协议逐项对照见 [Protocol Review](docs/protocol-review.md)。
 
-源码职责和修改入口见 [维护指南](docs/architecture.md)。格式化执行 `npm run format`，提交前执行 `npm run format:check`。
+文件职责与调用流程见 [代码结构文档](docs/code-structure.md)，修改入口与约定见 [维护指南](docs/architecture.md)。格式化执行 `npm run format`，提交前执行 `npm run format:check`。
 
 ## 开发说明
 
