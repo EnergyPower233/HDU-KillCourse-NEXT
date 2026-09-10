@@ -166,7 +166,7 @@ export default function App() {
   const failures = tasks.filter(
     (t) =>
       t.course &&
-      ['error', 'rejected', 'unknown'].includes(latest.get(t.course.jxbmc)?.status || ''),
+      ['error', 'rejected', 'failed', 'unknown'].includes(latest.get(t.course.jxbmc)?.status || ''),
   ).length;
 
   async function perform(label: string, fn: () => Promise<void>) {

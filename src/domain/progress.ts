@@ -6,6 +6,7 @@ export const statuses: Record<string, string> = {
   submitting: '提交中',
   success: '学校返回成功',
   rejected: '学校拒绝',
+  failed: '失败',
   unknown: '结果待核实',
   error: '异常',
   running: '运行中',

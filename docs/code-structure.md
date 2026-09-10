@@ -150,7 +150,7 @@ sequenceDiagram
 1. 任务页打开 `TaskReviewDialog`，展示目标课和先退课程；用户确认后先保存设置，再调用 `/api/tasks/start`。
 2. `api/tasks.rs` 校验任务并创建该批次的日志和取消信号，然后启动 `scheduler::run_tasks`。启动成功后，前端切到运行记录。
 3. 单次模式按任务顺序执行；每个任务先处理指定退课，再提交目标课。蹲课模式分组并发查询余量，选退课提交仍串行进行。这里主要使用 Tokio 异步任务，不是每门课独占一个系统线程。
-4. 学校响应在 `client/enrollment.rs` 中分为 `Success`、`Rejected`、`Unknown`。调度器发布含课程身份和选退课操作的事件，界面据此显示结果。
+4. 学校响应在 `client/enrollment.rs` 中分为 `Success`、`Rejected`、`Unknown`。调度器发布含课程身份和选退课操作的事件，界面据此显示结果。`Unknown` 保留原因，但按本次失败记录为 `failed`；跳过该课程、继续其他任务，蹲课也不自动重试它。退课未明确成功则跳过该项剩余退课和配对选课。
 5. 停止按钮发送 `/api/tasks/stop`，请求取消后续工作。已经发出的选退课请求不能撤回，需要等待结果；直接退出服务不能保证等待在途提交结束。
 
 先退后选不是事务：退课成功后选课失败不会自动恢复旧课。学校接口返回成功也不等于程序已独立查询已选课表核验。
@@ -200,7 +200,7 @@ npm run server:test
 cargo clippy --locked --manifest-path server/Cargo.toml --lib -- -D warnings
 ```
 
-`src/App.test.tsx` 用模拟 API 验证页面切换、导入、保存、导出和任务确认；`src/domain.test.ts` 检查辅助函数。Rust 测试分布在对应模块和 `client/tests.rs`，覆盖数据校验、协议响应、模拟课程分页、gzip 和日志读写。这些测试不使用真实学校凭据，也不等于完成真实选退课联调。
+`src/App.test.tsx` 用模拟 API 验证页面切换、导入、保存、导出和任务确认；`src/domain.test.ts` 检查辅助函数。Rust 测试分布在对应模块和 `client/tests.rs`，覆盖数据校验、协议响应、模拟课程分页、gzip 和日志读写。`scheduler/tests.rs` 通过本地模拟学校接口验证提交结果不明后继续下一项、蹲课不重复提交、退课依赖和手动停止。这些测试不使用真实学校凭据，也不等于完成真实选退课联调。
 
 `.github/workflows/check.yml` 执行提交检查；`.github/workflows/release.yml` 在版本标签触发时为六个平台构建并打包，操作步骤见 [发布指南](releasing.md)。
 

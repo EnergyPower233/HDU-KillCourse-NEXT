@@ -920,6 +920,7 @@ label small {
   color: var(--ok);
 }
 .badge.rejected,
+.badge.failed,
 .badge.error {
   background: var(--danger-soft);
   color: var(--danger);

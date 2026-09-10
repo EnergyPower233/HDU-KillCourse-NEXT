@@ -37,6 +37,7 @@ async fn fetch_mock_pages(pages: Vec<Value>) -> (Result<Vec<Course>, String>, us
         grade: String::new(),
         major: String::new(),
         ua: DEFAULT_UA.into(),
+        test_base: None,
     };
     let result = client
         .courses_from(&url, &Settings::default(), |_, _, _| {})
@@ -128,6 +129,7 @@ async fn school_client_negotiates_and_decodes_gzip() {
         grade: String::new(),
         major: String::new(),
         ua: DEFAULT_UA.into(),
+        test_base: None,
     };
     let result = client.post(&url, &Form::new()).await;
     server.abort();
@@ -154,7 +156,7 @@ fn school_rejection_is_not_success() {
     ));
     assert!(matches!(
         parse_outcome(&Action::Select, "<html>登录</html>"),
-        Outcome::Unknown
+        Outcome::Unknown(_)
     ));
     assert!(matches!(
         parse_outcome(&Action::Cancel, r#""1""#),
@@ -162,7 +164,7 @@ fn school_rejection_is_not_success() {
     ));
     assert!(matches!(
         parse_outcome(&Action::Cancel, ""),
-        Outcome::Unknown
+        Outcome::Unknown(_)
     ));
 }
 #[test]
@@ -271,4 +273,57 @@ fn fixed_ua_composes_realistic_strings() {
     assert!(safari.contains("Version/17.5 Safari/605.1.15"));
     let edge = build_fixed_ua("linux", "edge", "143.0.3270.55");
     assert!(edge.contains("Edg/143.0.3270.55") && edge.contains("X11; Linux x86_64"));
+}
+
+impl SchoolClient {
+    pub(crate) fn for_test(base: String) -> Self {
+        assert_eq!(
+            reqwest::Url::parse(&base).unwrap().host_str(),
+            Some("127.0.0.1")
+        );
+        Self {
+            http: Client::builder()
+                .no_proxy()
+                .timeout(Duration::from_secs(1))
+                .build()
+                .unwrap(),
+            grade: "2026".into(),
+            major: "test-major".into(),
+            ua: DEFAULT_UA.into(),
+            test_base: Some(base),
+        }
+    }
+
+    pub(super) fn test_url(&self, url: &str) -> String {
+        match &self.test_base {
+            Some(base) => format!(
+                "{base}{}",
+                url.strip_prefix(JW)
+                    .expect("unexpected school endpoint in scheduler test")
+            ),
+            None => url.into(),
+        }
+    }
+}
+
+#[test]
+fn unrecognized_submission_preserves_reason_without_claiming_success() {
+    for (reply, reason) in [
+        (r#"{"flag":"-1","msg":"人数已满"}"#, "人数已满"),
+        (r#"{"flag":"other","msg":"选课时间冲突"}"#, "选课时间冲突"),
+        (r#"{"flag":1}"#, "人数可能已满"),
+        ("{}", "人数可能已满"),
+        ("<html>登录</html>", "不是有效 JSON"),
+        ("", "不是有效 JSON"),
+    ] {
+        match parse_outcome(&Action::Select, reply) {
+            Outcome::Unknown(message) => assert!(message.contains(reason)),
+            other => panic!("unexpected outcome: {other:?}"),
+        }
+    }
+    let reply = serde_json::json!({"flag": "-1", "msg": "满".repeat(600)}).to_string();
+    match parse_outcome(&Action::Select, &reply) {
+        Outcome::Unknown(message) => assert_eq!(message.chars().count(), 500),
+        other => panic!("unexpected outcome: {other:?}"),
+    }
 }

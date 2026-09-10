@@ -65,3 +65,15 @@ it('labels successful selects and drops separately without guessing old events',
   expect(progressLabel({ ...event, action: 'cancel' })).toBe('退课成功');
   expect(progressLabel(event)).toBe('操作未记录 · 成功');
 });
+
+it('labels unconfirmed attempts as failed while preserving old unknown events', () => {
+  const event = {
+    course_id: 'class-01',
+    status: 'failed',
+    message: '提交结果不明，本次按失败处理',
+    time: '10:00:00',
+  };
+  expect(progressLabel({ ...event, action: 'select' })).toBe('选课失败');
+  expect(progressLabel({ ...event, action: 'cancel' })).toBe('退课失败');
+  expect(progressLabel({ ...event, status: 'unknown', action: 'select' })).toBe('选课结果待核实');
+});

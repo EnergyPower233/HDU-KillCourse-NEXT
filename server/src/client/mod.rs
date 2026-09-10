@@ -21,6 +21,8 @@ type Form = HashMap<String, String>;
 #[derive(Clone)]
 pub struct SchoolClient {
     http: Client,
+    #[cfg(test)]
+    test_base: Option<String>,
     pub grade: String,
     pub major: String,
     /// User-Agent resolved once when the session is created. It stays the
@@ -89,6 +91,8 @@ impl SchoolClient {
     }
 
     async fn get_with(&self, url: &str, headers: &[(&str, &str)]) -> Result<String, String> {
+        #[cfg(test)]
+        let url = self.test_url(url);
         let mut request = self
             .http
             .get(url)
@@ -123,6 +127,8 @@ impl SchoolClient {
     }
 
     async fn post(&self, url: &str, body: &Form) -> Result<String, String> {
+        #[cfg(test)]
+        let url = self.test_url(url);
         let response = self
             .http
             .post(url)

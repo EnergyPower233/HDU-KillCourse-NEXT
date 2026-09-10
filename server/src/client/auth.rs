@@ -44,6 +44,8 @@ impl SchoolClient {
             grade: String::new(),
             major: String::new(),
             ua: resolve_ua(ua),
+            #[cfg(test)]
+            test_base: None,
         };
         match auth.method.as_str() {
             "cookie" => {}
@@ -119,6 +121,8 @@ impl SchoolClient {
             grade: String::new(),
             major: String::new(),
             ua: resolve_ua(ua),
+            #[cfg(test)]
+            test_base: None,
         })
     }
 

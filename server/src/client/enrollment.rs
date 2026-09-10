@@ -7,7 +7,7 @@ use serde_json::Value;
 pub enum Outcome {
     Success,
     Rejected(String),
-    Unknown,
+    Unknown(String),
 }
 
 impl SchoolClient {
@@ -126,7 +126,7 @@ impl SchoolClient {
             .await
         {
             Ok(reply) => parse_outcome(action, &reply),
-            Err(_) => Outcome::Unknown,
+            Err(reason) => Outcome::Unknown(reason),
         }
     }
 }
@@ -141,7 +141,7 @@ fn category(c: &Course) -> Result<&'static str, String> {
 }
 pub fn parse_outcome(action: &Action, reply: &str) -> Outcome {
     let Ok(v) = serde_json::from_str::<Value>(reply) else {
-        return Outcome::Unknown;
+        return Outcome::Unknown("服务器回复不是有效 JSON".into());
     };
     match action {
         Action::Select => match v["flag"].as_str() {
@@ -154,14 +154,28 @@ pub fn parse_outcome(action: &Action, reply: &str) -> Outcome {
                     .take(500)
                     .collect(),
             ),
-            _ => Outcome::Unknown,
+            _ => Outcome::Unknown(reply_message(
+                &v,
+                "学校未返回可识别的选课结果，人数可能已满",
+            )),
         },
         Action::Cancel => {
             if v.as_str() == Some("1") {
                 Outcome::Success
             } else {
-                Outcome::Unknown
+                Outcome::Unknown(reply_message(&v, "学校未明确返回退课成功"))
             }
         }
     }
+}
+
+fn reply_message(value: &Value, fallback: &str) -> String {
+    value["msg"]
+        .as_str()
+        .map(str::trim)
+        .filter(|message| !message.is_empty())
+        .unwrap_or(fallback)
+        .chars()
+        .take(500)
+        .collect()
 }

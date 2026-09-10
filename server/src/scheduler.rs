@@ -3,6 +3,9 @@ use crate::{
     model::{self, Action, Course, Mode, Progress, Settings, TaskList},
     state::{publish, AppState},
 };
+#[cfg(test)]
+mod tests;
+
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
@@ -169,7 +172,7 @@ pub(crate) async fn run_tasks(
                 if token.is_cancelled() {
                     return Ok(());
                 }
-                submit_select(state, &client, settings, &config, &course, token).await?;
+                submit_select(state, &client, settings, &config, &course, token).await;
                 pending.retain(|t| {
                     t.course
                         .as_ref()
@@ -185,7 +188,7 @@ pub(crate) async fn run_tasks(
                 if token.is_cancelled() {
                     return Ok(());
                 }
-                run_once_task(state, &client, settings, &config, &task, token).await?;
+                run_once_task(state, &client, settings, &config, &task, token).await;
             }
         }
         if pending.is_empty() || matches!(list.mode, Mode::Once) {
@@ -202,8 +205,8 @@ pub(crate) async fn run_tasks(
     }
 }
 
-/// Submit one select request. Err means "stop the whole round" (result
-/// unknown); a rejected select is logged and the task is consumed.
+/// Consume this select attempt after recording its result. An unconfirmed
+/// submission counts as failed and is not retried during this run.
 async fn submit_select(
     state: &AppState,
     client: &SchoolClient,
@@ -211,8 +214,8 @@ async fn submit_select(
     config: &std::collections::HashMap<String, String>,
     course: &Course,
     token: &CancellationToken,
-) -> Result<(), String> {
-    let body = tokio::select! { biased; _ = token.cancelled() => return Ok(()), result = client.prepare(settings, course, config) => result };
+) {
+    let body = tokio::select! { biased; _ = token.cancelled() => return, result = client.prepare(settings, course, config) => result };
     let body = match body {
         Ok(body) => body,
         Err(e) => {
@@ -220,11 +223,11 @@ async fn submit_select(
                 state,
                 Progress::for_course(course, Action::Select, "error", &e),
             );
-            return Ok(());
+            return;
         }
     };
     if token.is_cancelled() {
-        return Ok(());
+        return;
     }
     publish(
         state,
@@ -237,7 +240,7 @@ async fn submit_select(
     );
     // Do not drop a mutation future on cancellation: retain its result, then stop.
     if token.is_cancelled() {
-        return Ok(());
+        return;
     }
     let outcome = client.submit(&Action::Select, &body).await;
     match outcome {
@@ -251,32 +254,29 @@ async fn submit_select(
                     "学校已返回成功，请以教务系统已选记录为准",
                 ),
             );
-            Ok(())
         }
         Outcome::Rejected(message) => {
             publish(
                 state,
                 Progress::for_course(course, Action::Select, "rejected", &message),
             );
-            Ok(())
         }
-        Outcome::Unknown => {
+        Outcome::Unknown(reason) => {
             publish(
                 state,
                 Progress::for_course(
                     course,
                     Action::Select,
-                    "unknown",
-                    "提交结果不明，已暂停全部任务。请先在教务系统核实，勿直接重复提交",
+                    "failed",
+                    &format!("提交结果不明，本次按失败处理并跳过该课程：{reason}。请核对教务系统已选记录"),
                 ),
             );
-            Err("出现结果不明的提交，请核实真实课表后再操作".into())
         }
     }
 }
 
-/// Submit one drop request. Ok(true) = dropped, Ok(false) = failed (skip the
-/// paired select), Err = stop the whole round (result unknown).
+/// Only a confirmed drop permits the paired select. Other outcomes skip
+/// the dependent task without stopping independent tasks in the list.
 async fn submit_drop(
     state: &AppState,
     client: &SchoolClient,
@@ -284,8 +284,8 @@ async fn submit_drop(
     config: &std::collections::HashMap<String, String>,
     drop: &Course,
     token: &CancellationToken,
-) -> Result<bool, String> {
-    let body = tokio::select! { biased; _ = token.cancelled() => return Ok(false), result = client.prepare(settings, drop, config) => result };
+) -> bool {
+    let body = tokio::select! { biased; _ = token.cancelled() => return false, result = client.prepare(settings, drop, config) => result };
     let body = match body {
         Ok(body) => body,
         Err(e) => {
@@ -293,11 +293,11 @@ async fn submit_drop(
                 state,
                 Progress::for_course(drop, Action::Cancel, "error", &format!("退课准备失败：{e}")),
             );
-            return Ok(false);
+            return false;
         }
     };
     if token.is_cancelled() {
-        return Ok(false);
+        return false;
     }
     publish(
         state,
@@ -309,7 +309,7 @@ async fn submit_drop(
         ),
     );
     if token.is_cancelled() {
-        return Ok(false);
+        return false;
     }
     let outcome = client.submit(&Action::Cancel, &body).await;
     match outcome {
@@ -323,7 +323,7 @@ async fn submit_drop(
                     "退课：学校已返回成功，请以教务系统已选记录为准",
                 ),
             );
-            Ok(true)
+            true
         }
         Outcome::Rejected(message) => {
             publish(
@@ -335,24 +335,25 @@ async fn submit_drop(
                     &format!("退课被拒绝：{message}"),
                 ),
             );
-            Ok(false)
+            false
         }
-        Outcome::Unknown => {
+        Outcome::Unknown(reason) => {
             publish(
                 state,
                 Progress::for_course(
                     drop,
                     Action::Cancel,
-                    "unknown",
-                    "退课结果不明，已暂停全部任务。请先在教务系统核实",
+                    "failed",
+                    &format!("退课结果不明，本次按失败处理并跳过依赖它的选课：{reason}。请核对教务系统已选记录"),
                 ),
             );
-            Err("出现结果不明的退课，请核实真实课表后再操作".into())
+            false
         }
     }
 }
 
-/// One once-mode task: drop everything first, then select. Err = stop round.
+/// Stop this task at the first unsuccessful prerequisite drop, then let
+/// the caller continue with the next independent task.
 async fn run_once_task(
     state: &AppState,
     client: &SchoolClient,
@@ -360,12 +361,12 @@ async fn run_once_task(
     config: &std::collections::HashMap<String, String>,
     task: &model::CourseTask,
     token: &CancellationToken,
-) -> Result<(), String> {
+) {
     for drop in &task.drops {
         if token.is_cancelled() {
-            return Ok(());
+            return;
         }
-        let dropped = submit_drop(state, client, settings, config, drop, token).await?;
+        let dropped = submit_drop(state, client, settings, config, drop, token).await;
         if !dropped {
             if let Some(course) = &task.course {
                 publish(
@@ -378,14 +379,13 @@ async fn run_once_task(
                     ),
                 );
             }
-            return Ok(());
+            return;
         }
     }
     if let Some(course) = &task.course {
         if token.is_cancelled() {
-            return Ok(());
+            return;
         }
-        submit_select(state, client, settings, config, course, token).await?;
+        submit_select(state, client, settings, config, course, token).await;
     }
-    Ok(())
 }
