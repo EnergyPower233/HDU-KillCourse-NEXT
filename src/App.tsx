@@ -274,7 +274,7 @@ export default function App() {
             </span>
             <ChevronRight size={15} />
           </button>
-          <div className="version">BROWSER EDITION · v0.3.0</div>
+          <div className="version">BROWSER EDITION · v0.3.1</div>
           <button
             className="exit-button"
             disabled={!!busy}
