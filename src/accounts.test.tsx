@@ -125,8 +125,10 @@ afterEach(() => {
 });
 
 async function openManager() {
-  render(<App />);
-  await screen.findByRole('button', { name: 'default 的课程' });
+  await act(async () => {
+    render(<App />);
+  });
+  expect(screen.getByRole('button', { name: 'default 的课程' })).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: /账号与并行任务/ }));
   return screen.getByRole('dialog', { name: '账号与并行任务' });
 }

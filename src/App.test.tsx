@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import { api, accountsApi, createApi } from './bridge';
@@ -69,8 +69,10 @@ afterEach(() => {
 });
 
 async function openTasks() {
-  render(<App />);
-  await screen.findByRole('button', { name: '测试课程' });
+  await act(async () => {
+    render(<App />);
+  });
+  expect(screen.getByRole('button', { name: '测试课程' })).toBeTruthy();
   fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name: /选课任务/ }));
 }
 function importFile(text: string) {
