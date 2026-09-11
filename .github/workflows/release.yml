@@ -153,7 +153,7 @@ jobs:
             gh release upload "$TAG" artifacts/* --clobber
           else
             gh release create "$TAG" artifacts/* \
-              --verify-tag --draft --prerelease \
+              --verify-tag --draft \
               --title "HDU-KillCourse NEXT $TAG" \
-              --notes '自动构建的预览版本。请下载对应系统与架构的压缩包；使用说明见包内 README.md。构建与自动测试不代表真实教务选退课已经验证。'
+              --notes '自动构建的发布版本。请下载对应系统与架构的压缩包；使用说明见包内 README.md。构建与自动测试不代表真实教务选退课已经验证。'
           fi

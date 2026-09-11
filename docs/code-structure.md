@@ -47,6 +47,7 @@ server/
   src/
     main.rs               程序入口和端口解析
     lib.rs                服务初始化与关闭
+    accounts.rs           账号目录与账号状态管理
     api/                  本机 HTTP 路由
     client/               学校 HTTP 通信
     scheduler.rs          任务顺序、查询并发与停止
@@ -106,7 +107,7 @@ Rust 的 `mod` 声明模块；目录中的 `mod.rs` 是该模块的入口。`imp
 | [model.rs](../server/src/model.rs)、[task_import.rs](../server/src/task_import.rs)             | 数据模型与校验；后者集中处理清单交换格式                                   |
 | [storage.rs](../server/src/storage.rs)、[run_log.rs](../server/src/run_log.rs)                 | 配置和课程缓存持久化；运行日志创建、批次枚举和分页读取                     |
 
-`AppState` 通过 `Arc<Mutex<...>>` 共享运行状态：多个异步任务可以持有同一状态，访问受互斥锁保护。学校网络请求前应释放锁。当前事件发布中的日志写入仍是同步操作，模块拆分没有消除这项性能约束。
+`Accounts` 为每个账号持有独立 `AppState` 和 `Storage`；`AppState` 通过 `Arc<Mutex<...>>` 共享该账号的运行状态：多个异步任务可以持有同一状态，访问受互斥锁保护。学校网络请求前应释放锁。当前事件发布中的日志写入仍是同步操作，模块拆分没有消除这项性能约束。
 
 ## 主要执行流程
 
@@ -149,7 +150,7 @@ sequenceDiagram
 
 1. 任务页打开 `TaskReviewDialog`，展示目标课和先退课程；用户确认后先保存设置，再调用 `/api/tasks/start`。
 2. `api/tasks.rs` 校验任务并创建该批次的日志和取消信号，然后启动 `scheduler::run_tasks`。启动成功后，前端切到运行记录。
-3. 单次模式按任务顺序执行；每个任务先处理指定退课，再提交目标课。蹲课模式分组并发查询余量，选退课提交仍串行进行。这里主要使用 Tokio 异步任务，不是每门课独占一个系统线程。
+3. 单次模式按任务顺序执行；每个任务先处理指定退课，再提交目标课。蹲课模式分组并发查询余量，同一账号内选退课提交仍串行进行，多个账号之间可以并行。这里主要使用 Tokio 异步任务，不是每门课独占一个系统线程。
 4. 学校响应在 `client/enrollment.rs` 中分为 `Success`、`Rejected`、`Unknown`。调度器发布含课程身份和选退课操作的事件，界面据此显示结果。`Unknown` 保留原因，但按本次失败记录为 `failed`；跳过该课程、继续其他任务，蹲课也不自动重试它。退课未明确成功则跳过该项剩余退课和配对选课。
 5. 停止按钮发送 `/api/tasks/stop`，请求取消后续工作。已经发出的选退课请求不能撤回，需要等待结果；直接退出服务不能保证等待在途提交结束。
 
@@ -186,7 +187,7 @@ sequenceDiagram
 | `logs/*.jsonl`      | 各次运行的日志         |
 | 浏览器 localStorage | 主题偏好               |
 
-编辑中尚未保存的清单、学校会话与正在执行的任务状态不做断点恢复。配置写入目前也不是原子替换，不能把“保存在本地”理解为已经解决全部中断或并发保存问题。
+编辑中尚未保存的清单、学校会话与正在执行的任务状态不做断点恢复。配置按账号通过同目录临时文件替换；这不提供跨进程的修改合并，也不意味着任务可以断点恢复。
 
 ## 构建与验证入口
 
@@ -209,3 +210,9 @@ cargo clippy --locked --manifest-path server/Cargo.toml --lib -- -D warnings
 先用 `types.ts` 和 `model.rs` 认识数据，再读 `App.tsx` 与三个页面，随后沿一次“导入清单”操作读 `useTaskLists.ts`、`bridge.ts`、`api/tasks.rs` 和 `task_import.rs`。理解本机 API 后，再读 `scheduler.rs`、`client/enrollment.rs`、`state.rs` 和 `run_log.rs`，串起任务执行与结果记录。
 
 修改学校协议前应另读 Protocol Review；修改界面布局通常只需页面和组件，不需要进入学校客户端。
+
+## 多账号调用边界
+
+`App` → `useAccounts` → `AccountProvider(id)` → 当前账号工作台。`createApi(id)` 固定请求头；切换账号时旧工作台卸载，其旧请求不会改发给新账号。
+
+`api::select_account` → `Accounts::get(id)` → 请求 `Extension<AppState>` → 当前账号的 API、调度器与 `Storage`。每个账号的 Cookie Jar、取消信号、内存事件和磁盘日志互不共用。详细目录和测试说明见 [多账号使用说明](multi-account.md)。

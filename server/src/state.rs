@@ -2,6 +2,7 @@ use crate::{
     client::SchoolClient,
     model::{Progress, Settings},
     run_log,
+    storage::Storage,
 };
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
@@ -15,6 +16,8 @@ pub(crate) struct Inner {
     pub(crate) client: Option<SchoolClient>,
     pub(crate) cancel: Option<CancellationToken>,
     pub(crate) authenticating: bool,
+    pub(crate) auth_generation: u64,
+    pub(crate) qr_starting: bool,
     pub(crate) history: Vec<Progress>,
     pub(crate) run_log: Option<run_log::RunLog>,
     pub(crate) log_error: Option<String>,
@@ -46,18 +49,22 @@ pub(crate) struct QrSession {
 pub(crate) struct AppState {
     pub(crate) inner: Arc<Mutex<Inner>>,
     pub(crate) shutdown: watch::Sender<bool>,
+    pub(crate) store: Storage,
 }
 
 impl AppState {
+    pub(crate) fn for_store(store: Storage, shutdown: watch::Sender<bool>) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(Inner::default())),
+            shutdown,
+            store,
+        }
+    }
+    #[cfg(test)]
     pub(crate) fn new() -> (Self, watch::Receiver<bool>) {
         let (shutdown, rx) = watch::channel(false);
-        (
-            Self {
-                inner: Arc::new(Mutex::new(Inner::default())),
-                shutdown,
-            },
-            rx,
-        )
+        let root = std::env::temp_dir().join(format!("hdu-state-{:016x}", rand::random::<u64>()));
+        (Self::for_store(Storage::new(root), shutdown), rx)
     }
     pub(crate) fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
         self.inner.lock().unwrap()

@@ -11,7 +11,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import type * as React from 'react';
-import { api } from '../bridge';
+import { useApi } from '../AccountContext';
 import { IntervalInput } from '../components/ui';
 import {
   credentialsFor,
@@ -51,6 +51,7 @@ export function SettingsPage({
   patchUa,
   login,
 }: Props) {
+  const api = useApi();
   const { creds, moveMethod, setCreds } = login;
   return (
     <div className="settings-layout">

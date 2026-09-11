@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { api } from '../bridge';
+import { useApi } from '../AccountContext';
 import { defaults } from '../domain/settings';
 import { defaultUaConfig } from '../domain/ua';
 import { defaultStoredCredentials } from '../domain/credentials';
 import type { Settings, Course, Snapshot, UaConfig, StoredCredentials } from '../types';
 export function useWorkspace(toast: (text: string, error?: boolean) => void) {
+  const api = useApi();
   const [settings, setSettings] = useState<Settings>(defaults);
   const [courses, setCourses] = useState<Course[]>([]);
   const [snapshot, setSnapshot] = useState<Snapshot>({
@@ -30,54 +31,41 @@ export function useWorkspace(toast: (text: string, error?: boolean) => void) {
         return;
       }
       try {
-        const [s, c, r] = await Promise.all([
+        const [s, c, r, credentials, userAgent] = await Promise.all([
           api.loadSettings(),
           api.loadCourses(),
           api.snapshot(),
+          api.loadCredentials(),
+          api.loadUa(),
         ]);
-        if (alive) {
-          setSettings(s);
-          setCourses(c);
-          setSnapshot(r);
-          setBackend(true);
+        if (!alive) return;
+        setSettings(s);
+        setCourses(c);
+        setSnapshot(r);
+        setCreds(credentials);
+        const nextUa =
+          userAgent.mode === 'browser'
+            ? { ...userAgent, browser_ua: navigator.userAgent }
+            : userAgent;
+        setUa(nextUa);
+        setBackend(true);
+        setReady(true);
+        if (userAgent.mode === 'browser' && userAgent.browser_ua !== navigator.userAgent) {
+          void api.saveUa(nextUa).catch((e) => {
+            if (alive) toast(String(e), true);
+          });
         }
       } catch (e) {
         if (alive) {
           toast(String(e), true);
           setBackend(true);
         }
-      } finally {
-        if (alive) setReady(true);
       }
-      api
-        .loadCredentials()
-        .then((c) => {
-          if (alive) setCreds(c);
-        })
-        .catch((e) => {
-          if (alive) toast(String(e), true);
-        });
-      api
-        .loadUa()
-        .then((u) => {
-          if (!alive) return;
-          // In browser mode, always reflect the actual browser UA.
-          if (u.mode === 'browser' && u.browser_ua !== navigator.userAgent) {
-            const next = { ...u, browser_ua: navigator.userAgent };
-            setUa(next);
-            void api.saveUa(next).catch(() => {});
-          } else {
-            setUa(u);
-          }
-        })
-        .catch(() => {
-          /* UA 配置缺失时使用默认值 */
-        });
     })();
     return () => {
       alive = false;
     };
-  }, [toast]);
+  }, [toast, api]);
   useEffect(() => {
     let alive = true,
       polling = false;
@@ -102,7 +90,7 @@ export function useWorkspace(toast: (text: string, error?: boolean) => void) {
       alive = false;
       clearInterval(timer);
     };
-  }, [toast]);
+  }, [toast, api]);
   return {
     settings,
     setSettings,

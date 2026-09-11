@@ -1,5 +1,5 @@
-import { useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { api } from '../bridge';
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { useApi } from '../AccountContext';
 import {
   credentialsFor,
   loginMethodLabels,
@@ -29,6 +29,7 @@ interface Options {
   setBusy: Dispatch<SetStateAction<string>>;
 }
 export function useLogin({ settings, toast, setSnapshot, setBusy, creds, setCreds }: Options) {
+  const api = useApi();
   const [auth, setAuth] = useState<Credentials>(emptyAuth);
   const [loginOpen, setLoginOpen] = useState(false);
   const [qr, setQr] = useState<{
@@ -42,6 +43,21 @@ export function useLogin({ settings, toast, setSnapshot, setBusy, creds, setCred
   const qrBusy = useRef(false);
   const qrResolve = useRef<((ok: boolean) => void) | null>(null);
   const qrAutoRef = useRef(false);
+  const alive = useRef(true);
+  const qrGeneration = useRef(0);
+  const qrActive = useRef(false);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      qrGeneration.current++;
+      clearQrTimer();
+      qrResolve.current?.(false);
+      qrResolve.current = null;
+      if (qrActive.current) void api.loginQrCancel().catch(() => {});
+      qrActive.current = false;
+    };
+  }, [api]);
   // DingTalk QR login flow: fetch the QR once, then poll the scan status.
   // In "auto" mode the promise resolves true on success / false on failure so
   // the ordered login sequence can continue to the next method.
@@ -52,6 +68,8 @@ export function useLogin({ settings, toast, setSnapshot, setBusy, creds, setCred
     }
   }
   function finishQr(ok: boolean) {
+    qrActive.current = false;
+    qrGeneration.current++;
     qrAutoRef.current = false;
     setQrAutoMode(false);
     clearQrTimer();
@@ -60,22 +78,28 @@ export function useLogin({ settings, toast, setSnapshot, setBusy, creds, setCred
     qrResolve.current = null;
     resolve?.(ok);
   }
-  function cancelQr() {
+  async function cancelQr() {
+    const wasActive = qrActive.current;
+    qrActive.current = false;
+    qrGeneration.current++;
     if (qrResolve.current) {
       finishQr(false);
     } else {
       clearQrTimer();
       setQr(null);
     }
-    void api.loginQrCancel().catch(() => {
-      /* the pending session is optional state */
-    });
+    if (wasActive)
+      await api.loginQrCancel().catch(() => {
+        /* the pending session is optional state */
+      });
   }
   async function pollQr() {
     if (qrBusy.current) return;
     qrBusy.current = true;
+    const generation = qrGeneration.current;
     try {
       const r = await api.loginQrPoll();
+      if (!alive.current || generation !== qrGeneration.current) return;
       if (r.status === 'confirmed') {
         if (qrAutoRef.current) {
           finishQr(true); // the auto flow finishes the bookkeeping
@@ -98,6 +122,7 @@ export function useLogin({ settings, toast, setSnapshot, setBusy, creds, setCred
         setQr((q) => (q && q.image ? { ...q, message: r.message || '等待扫码' } : q));
       }
     } catch (e) {
+      if (!alive.current || generation !== qrGeneration.current) return;
       if (qrAutoRef.current) {
         finishQr(false);
       } else {
@@ -109,15 +134,19 @@ export function useLogin({ settings, toast, setSnapshot, setBusy, creds, setCred
     }
   }
   async function startQr() {
+    const generation = ++qrGeneration.current;
+    qrActive.current = true;
     clearQrTimer();
     setQr({ image: '', status: 'waiting', message: '正在获取二维码…' });
     try {
       const r = await api.loginQrStart(settings);
+      if (!alive.current || generation !== qrGeneration.current) return;
       setQr({ image: r.image, status: 'waiting', message: '请打开钉钉，扫描二维码' });
       qrTimer.current = window.setInterval(() => {
         void pollQr();
       }, 1500);
     } catch (e) {
+      if (!alive.current || generation !== qrGeneration.current) return;
       if (qrAutoRef.current) {
         finishQr(false);
       } else {
@@ -141,8 +170,9 @@ export function useLogin({ settings, toast, setSnapshot, setBusy, creds, setCred
   }
 
   // -- Credentials persistence & ordered login attempts ---------------------
-  function selectMethod(method: LoginMethod) {
-    cancelQr();
+  async function selectMethod(method: LoginMethod) {
+    await cancelQr();
+    if (!alive.current) return;
     const c = credentialsFor(method, creds);
     setAuth(c ?? { ...emptyAuth, method });
     if (method === 'qrcode') void startQr();
@@ -168,12 +198,14 @@ export function useLogin({ settings, toast, setSnapshot, setBusy, creds, setCred
     const order = normalizeOrder(creds.order);
     setBusy('自动连接中');
     for (let i = 0; i < order.length; i++) {
+      if (!alive.current) return;
       const method = order[i];
       const label = loginMethodLabels[method];
       setAutoNote(`正在尝试第 ${i + 1} 种方式：${label}…`);
       if (method === 'qrcode') {
         setAutoNote(`第 ${i + 1} 种方式：钉钉扫码，请用手机钉钉扫描`);
         const ok = await waitQr();
+        if (!alive.current) return;
         if (ok) {
           finishLogin();
           return;
@@ -188,6 +220,7 @@ export function useLogin({ settings, toast, setSnapshot, setBusy, creds, setCred
       }
       try {
         await api.login(c, settings);
+        if (!alive.current) return;
         await rememberCreds(c);
         finishLogin();
         return;

@@ -1,6 +1,6 @@
 import { LoaderCircle, Radio } from 'lucide-react';
 import type * as React from 'react';
-import { api } from '../bridge';
+import { useApi } from '../AccountContext';
 import { Modal } from '../components/ui';
 import { formatDurationSecs } from '../domain/interval';
 import type { View } from '../navigation';
@@ -31,6 +31,7 @@ export function TaskReviewDialog({
   setSnapshot,
   toast,
 }: Props) {
+  const api = useApi();
   return (
     <Modal title="确认本轮任务" onClose={() => !busy && setReviewOpen(false)}>
       <label>

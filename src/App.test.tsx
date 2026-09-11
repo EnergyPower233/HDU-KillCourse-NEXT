@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
-import { api } from './bridge';
+import { api, accountsApi, createApi } from './bridge';
 import { defaultStoredCredentials } from './domain/credentials';
 import { defaults } from './domain/settings';
 import { defaultUaConfig } from './domain/ua';
@@ -10,7 +10,12 @@ import type { Course, TaskList } from './types';
 
 vi.mock('./bridge', async (original) => {
   const actual = await original<typeof import('./bridge')>();
-  return { api: Object.fromEntries(Object.keys(actual.api).map((key) => [key, vi.fn()])) };
+  const api = Object.fromEntries(Object.keys(actual.api).map((key) => [key, vi.fn()]));
+  return {
+    api,
+    createApi: vi.fn(),
+    accountsApi: { list: vi.fn(), create: vi.fn(), rename: vi.fn() },
+  };
 });
 const course: Course = {
   jxbmc: '(2026-2027-1)-test',
@@ -27,6 +32,17 @@ const imported: TaskList = { name: '导入的清单', mode: 'watch', tasks: [{ c
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(createApi).mockReturnValue(api);
+  vi.mocked(accountsApi.list).mockResolvedValue([
+    {
+      id: 'default',
+      name: '默认账号',
+      running: false,
+      logged_in: true,
+      authenticating: false,
+      log_error: null,
+    },
+  ]);
   localStorage.clear();
   vi.stubGlobal(
     'matchMedia',

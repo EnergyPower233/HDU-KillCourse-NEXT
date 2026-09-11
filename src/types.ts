@@ -98,3 +98,14 @@ export type StoredCredentials = {
   route: string;
   order: LoginMethod[];
 };
+
+export interface AccountProfile {
+  id: string;
+  name: string;
+}
+export interface AccountSummary extends AccountProfile {
+  running: boolean;
+  logged_in: boolean;
+  authenticating: boolean;
+  log_error: string | null;
+}

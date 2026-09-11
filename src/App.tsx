@@ -1,3 +1,7 @@
+import { AccountProvider } from './AccountContext';
+import { useAccounts } from './hooks/useAccounts';
+import { AccountsDialog } from './components/AccountsDialog';
+import type { AccountProfile, AccountSummary } from './types';
 import { useWorkspace } from './hooks/useWorkspace';
 import { useTheme } from './hooks/useTheme';
 import { PageHeader } from './components/PageHeader';
@@ -25,7 +29,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityLog } from './ActivityLog';
-import { api } from './bridge';
+import { useApi } from './AccountContext';
 import { CourseDialog } from './components/CourseDialog';
 import { DropPickerDialog } from './components/DropPickerDialog';
 import { LoginDialog } from './components/LoginDialog';
@@ -50,6 +54,48 @@ const navigation = [
 ] as const;
 
 export default function App() {
+  const manager = useAccounts();
+  if (!manager.current)
+    return (
+      <main className="account-loading">
+        <h1>HDU-KillCourse NEXT</h1>
+        <p role={manager.error ? 'alert' : 'status'}>{manager.error || '正在读取账号列表…'}</p>
+        {manager.error && (
+          <button
+            className="button secondary"
+            onClick={() => void manager.refresh().catch(() => {})}
+          >
+            重新连接
+          </button>
+        )}
+      </main>
+    );
+  return (
+    <AccountProvider key={manager.current.id} id={manager.current.id}>
+      {manager.error && (
+        <div role="alert" className="offline-banner">
+          账号状态更新失败：{manager.error}
+        </div>
+      )}
+      <Workspace
+        accounts={manager.accounts}
+        current={manager.current}
+        onSelect={manager.select}
+        refreshAccounts={manager.refresh}
+      />
+    </AccountProvider>
+  );
+}
+
+interface WorkspaceProps {
+  accounts: AccountSummary[];
+  current: AccountProfile;
+  onSelect: (id: string) => void;
+  refreshAccounts: () => Promise<void>;
+}
+function Workspace({ accounts, current, onSelect, refreshAccounts }: WorkspaceProps) {
+  const api = useApi();
+  const [accountsOpen, setAccountsOpen] = useState(false);
   const [view, setView] = useState<View>('courses');
 
   const [query, setQuery] = useState('');
@@ -89,7 +135,7 @@ export default function App() {
     setCreds,
   } = useWorkspace(toast);
   const offline = backend === false;
-  const locked = snapshot.running || !!busy || offline;
+  const locked = !ready || snapshot.running || !!busy || offline;
   const login = useLogin({ settings, toast, setSnapshot, setBusy, creds, setCreds });
   const { setAuth, loginOpen, setLoginOpen, cancelQr } = login;
   const taskLists = useTaskLists({ settings, setSettings, setSaved, toast, perform });
@@ -183,6 +229,12 @@ export default function App() {
     await api.saveSettings(settings);
     setSaved(true);
   }
+  async function switchAccount(id: string) {
+    if (id === current.id) return;
+    if (!saved) await save();
+    login.closeLogin();
+    onSelect(id);
+  }
   async function importFile(file?: File) {
     if (!file) return;
     if (file.size > 30 * 1024 * 1024) {
@@ -237,6 +289,35 @@ export default function App() {
             杭电选课<small>HDU-KillCourse NEXT</small>
           </div>
         </div>
+        <div className="account-switcher">
+          <label>
+            当前账号
+            <select
+              aria-label="当前账号"
+              value={current.id}
+              disabled={!!busy}
+              onChange={(e) => void perform('切换账号', () => switchAccount(e.target.value))}
+            >
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                  {a.running ? ' · 运行中' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          <small>切换时自动保存清单，后台任务继续运行</small>
+          <button
+            className="button secondary"
+            disabled={!!busy}
+            onClick={() => setAccountsOpen(true)}
+          >
+            账号与并行任务
+            {accounts.some((a) => a.running)
+              ? ` · ${accounts.filter((a) => a.running).length} 个运行中`
+              : ''}
+          </button>
+        </div>
         <div className="workspace-label">我的工作台</div>
         <nav aria-label="主导航">
           {navigation.map((n) => (
@@ -260,7 +341,7 @@ export default function App() {
           </div>
           <button
             className="account-button"
-            disabled={!!busy || snapshot.running}
+            disabled={!ready || !!busy || snapshot.running}
             onClick={() => setLoginOpen(true)}
           >
             <span className="avatar">
@@ -294,7 +375,7 @@ export default function App() {
       <div className="main-shell">
         <header className="topbar">
           <div className="breadcrumb">
-            工作台 <ChevronRight size={13} />
+            {current.name} <ChevronRight size={13} />
             <strong>{navigation.find((n) => n.id === view)?.title}</strong>
           </div>
           <div className="topbar-right">
@@ -538,6 +619,18 @@ export default function App() {
         </main>
       </div>
 
+      {accountsOpen && (
+        <AccountsDialog
+          accounts={accounts}
+          current={current}
+          onClose={() => setAccountsOpen(false)}
+          onSelect={switchAccount}
+          refresh={refreshAccounts}
+          saveCurrent={async () => {
+            if (!saved) await save();
+          }}
+        />
+      )}
       {loginOpen && (
         <LoginDialog
           snapshot={snapshot}

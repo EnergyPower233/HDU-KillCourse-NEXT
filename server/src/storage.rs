@@ -1,6 +1,10 @@
 use crate::model::{self, Settings};
 use serde::Serialize;
-use std::path::PathBuf;
+use std::{
+    io::Write,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 pub(crate) fn data_path(file: &str) -> Result<PathBuf, String> {
     if let Ok(dir) = std::env::var("HDU_DATA_DIR") {
@@ -50,38 +54,74 @@ pub(crate) fn migrate_portable_data() {
     }
 }
 
-pub(crate) fn save_json<T: Serialize>(file: &str, value: &T) -> Result<(), String> {
-    let path = data_path(file)?;
-    let bytes = serde_json::to_vec_pretty(value).map_err(|_| "无法编码配置")?;
-    std::fs::write(path, bytes).map_err(|_| "无法保存本地数据".into())
+#[derive(Clone)]
+pub(crate) struct Storage {
+    root: PathBuf,
+    writes: Arc<Mutex<()>>,
 }
 
-pub(crate) fn load_settings_file() -> Result<Settings, String> {
-    let path = data_path("settings.json")?;
-    if !path.exists() {
-        return Ok(Settings::default());
+impl Storage {
+    pub(crate) fn new(root: PathBuf) -> Self {
+        Self {
+            root,
+            writes: Arc::default(),
+        }
     }
-    serde_json::from_slice(&std::fs::read(path).map_err(|_| "无法读取配置")?)
-        .map_err(|_| "保存的配置已损坏".into())
-}
 
-pub(crate) fn load_stored_credentials() -> Result<model::StoredCredentials, String> {
-    let path = data_path("credentials.json")?;
-    if !path.exists() {
-        return Ok(model::StoredCredentials::default());
+    pub(crate) fn path(&self, file: &str) -> Result<PathBuf, String> {
+        std::fs::create_dir_all(&self.root).map_err(|_| "无法创建账号数据目录")?;
+        Ok(self.root.join(file))
     }
-    serde_json::from_slice(&std::fs::read(path).map_err(|_| "无法读取登录凭证")?)
-        .map_err(|_| "保存的登录凭证已损坏，请在偏好设置中清除后重新填写".into())
-}
 
-pub(crate) fn load_ua_config() -> Result<model::UaConfig, String> {
-    let path = data_path("ua.json")?;
-    if !path.exists() {
-        return Ok(model::UaConfig::default());
+    pub(crate) fn save_json<T: Serialize>(&self, file: &str, value: &T) -> Result<(), String> {
+        let _guard = self.writes.lock().unwrap();
+        let path = self.path(file)?;
+        let temporary = self
+            .root
+            .join(format!(".write-{:016x}.tmp", rand::random::<u64>()));
+        let bytes = serde_json::to_vec_pretty(value).map_err(|_| "无法编码配置")?;
+        let mut created = false;
+        let result = (|| -> std::io::Result<()> {
+            let mut options = std::fs::OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            let mut output = options.open(&temporary)?;
+            created = true;
+            output.write_all(&bytes)?;
+            output.sync_all()?;
+            drop(output);
+            std::fs::rename(&temporary, path)
+        })();
+        if result.is_err() && created {
+            let _ = std::fs::remove_file(&temporary);
+        }
+        result.map_err(|_| "无法保存账号数据".into())
     }
-    let mut config: model::UaConfig =
-        serde_json::from_slice(&std::fs::read(path).map_err(|_| "无法读取 User-Agent 配置")?)
-            .map_err(|_| "User-Agent 配置已损坏，请在设置中重置".to_string())?;
-    config.normalize();
-    Ok(config)
+
+    fn load<T: serde::de::DeserializeOwned + Default>(&self, file: &str) -> Result<T, String> {
+        let path = self.path(file)?;
+        match std::fs::read(path) {
+            Ok(bytes) => {
+                serde_json::from_slice(&bytes).map_err(|_| format!("账号文件 {file} 已损坏"))
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(T::default()),
+            Err(_) => Err(format!("无法读取账号文件 {file}")),
+        }
+    }
+
+    pub(crate) fn load_settings_file(&self) -> Result<Settings, String> {
+        self.load("settings.json")
+    }
+    pub(crate) fn load_stored_credentials(&self) -> Result<model::StoredCredentials, String> {
+        self.load("credentials.json")
+    }
+    pub(crate) fn load_ua_config(&self) -> Result<model::UaConfig, String> {
+        let mut value: model::UaConfig = self.load("ua.json")?;
+        value.normalize();
+        Ok(value)
+    }
 }

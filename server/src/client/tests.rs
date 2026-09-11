@@ -327,3 +327,18 @@ fn unrecognized_submission_preserves_reason_without_claiming_success() {
         other => panic!("unexpected outcome: {other:?}"),
     }
 }
+
+impl SchoolClient {
+    pub(crate) fn for_test_account(base: String, cookie: &str) -> Self {
+        let mut client = Self::for_test(base.clone());
+        let jar = Arc::new(Jar::default());
+        jar.add_cookie_str(cookie, &reqwest::Url::parse(&base).unwrap());
+        client.http = Client::builder()
+            .no_proxy()
+            .cookie_provider(jar)
+            .timeout(Duration::from_secs(5))
+            .build()
+            .unwrap();
+        client
+    }
+}

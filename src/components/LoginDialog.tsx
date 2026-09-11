@@ -10,7 +10,7 @@ import {
   Zap,
 } from 'lucide-react';
 import type * as React from 'react';
-import { api } from '../bridge';
+import { useApi } from '../AccountContext';
 import { Modal } from '../components/ui';
 import { loginMethodLabels, normalizeOrder } from '../domain/credentials';
 import type { useLogin } from '../hooks/useLogin';
@@ -41,6 +41,7 @@ export function LoginDialog({
   offline,
   login,
 }: Props) {
+  const api = useApi();
   const {
     closeLogin,
     auth,

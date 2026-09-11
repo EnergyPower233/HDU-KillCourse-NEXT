@@ -2,9 +2,8 @@ use super::{Api, ApiError, SettingsArg};
 use crate::{
     model::{self, Course},
     state::{AppState, FetchProgress},
-    storage::{data_path, save_json},
 };
-use axum::{extract::State, Json};
+use axum::{Extension, Json};
 use serde::Deserialize;
 use std::time::Duration;
 const MAX_IMPORT_BYTES: usize = 30 * 1024 * 1024;
@@ -14,8 +13,8 @@ pub(crate) struct ImportArg {
     text: String,
 }
 
-pub(crate) async fn courses_get() -> Api<Vec<Course>> {
-    let path = data_path("courses.json")?;
+pub(crate) async fn courses_get(Extension(state): Extension<AppState>) -> Api<Vec<Course>> {
+    let path = state.store.path("courses.json")?;
     if !path.exists() {
         return Ok(Json(vec![]));
     }
@@ -24,17 +23,20 @@ pub(crate) async fn courses_get() -> Api<Vec<Course>> {
         .map_err(ApiError)
 }
 
-pub(crate) async fn courses_import(Json(arg): Json<ImportArg>) -> Api<Vec<Course>> {
+pub(crate) async fn courses_import(
+    Extension(state): Extension<AppState>,
+    Json(arg): Json<ImportArg>,
+) -> Api<Vec<Course>> {
     if arg.text.len() > MAX_IMPORT_BYTES {
         return Err(ApiError("课程文件不能超过 30 MB".into()));
     }
     let courses = model::parse_courses(&arg.text)?;
-    save_json("courses.json", &courses)?;
+    state.store.save_json("courses.json", &courses)?;
     Ok(Json(courses))
 }
 
 pub(crate) async fn courses_fetch(
-    State(state): State<AppState>,
+    Extension(state): Extension<AppState>,
     Json(arg): Json<SettingsArg>,
 ) -> Api<Vec<Course>> {
     let c = state
@@ -77,6 +79,6 @@ pub(crate) async fn courses_fetch(
         }
     };
     state.lock().fetch_progress = None;
-    save_json("courses.json", &courses)?;
+    state.store.save_json("courses.json", &courses)?;
     Ok(Json(courses))
 }

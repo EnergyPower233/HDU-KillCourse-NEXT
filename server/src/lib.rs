@@ -1,4 +1,5 @@
 //! Local HTTP server startup. Routes, storage and task execution live in separate modules.
+mod accounts;
 mod api;
 mod client;
 mod model;
@@ -8,20 +9,24 @@ mod state;
 mod storage;
 mod task_import;
 
+use accounts::Accounts;
 use api::router;
 use client::SchoolClient;
 use scheduler::method_label;
 use state::AppState;
-use storage::{load_settings_file, load_stored_credentials, load_ua_config, migrate_portable_data};
+use storage::{data_path, migrate_portable_data};
 
 pub async fn serve(port: u16) -> Result<(), Box<dyn std::error::Error>> {
-    let (state, mut rx) = AppState::new();
+    let (shutdown, mut rx) = tokio::sync::watch::channel(false);
+    migrate_portable_data();
+    let accounts = Accounts::load(data_path("")?, shutdown)?;
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
     let url = format!("http://127.0.0.1:{port}");
     println!("HDU-KillCourse NEXT 已启动：{url}");
     println!("按 Ctrl+C 或在界面中点击「退出程序」关闭本地服务。");
-    migrate_portable_data();
-    spawn_auto_login(state.clone());
+    for (profile, state) in accounts.states() {
+        spawn_auto_login(profile.name, state);
+    }
     if std::env::var("HDU_NO_OPEN").is_err() {
         // Opening the default browser is a convenience; failure is not fatal.
         let url2 = url.clone();
@@ -31,7 +36,7 @@ pub async fn serve(port: u16) -> Result<(), Box<dyn std::error::Error>> {
             }
         });
     }
-    axum::serve(listener, router(state))
+    axum::serve(listener, router(accounts))
         .with_graceful_shutdown(async move {
             tokio::select! {
                 _ = tokio::signal::ctrl_c() => {}
@@ -46,20 +51,31 @@ pub async fn serve(port: u16) -> Result<(), Box<dyn std::error::Error>> {
 /// Attempt an ordered login in the background at startup, using the saved
 /// credentials. Browser startup runs concurrently, so the page may open before
 /// login finishes. QR login is skipped because it needs user interaction.
-fn spawn_auto_login(state: AppState) {
-    let stored = load_stored_credentials().unwrap_or_default();
-    let ua = load_ua_config().unwrap_or_default();
-    let settings = load_settings_file().unwrap_or_default();
+fn spawn_auto_login(name: String, state: AppState) {
+    let stored = state.store.load_stored_credentials().unwrap_or_default();
+    let ua = state.store.load_ua_config().unwrap_or_default();
+    let settings = state.store.load_settings_file().unwrap_or_default();
+    let generation = {
+        let mut inner = state.lock();
+        inner.authenticating = true;
+        inner.auth_generation += 1;
+        inner.auth_generation
+    };
     tokio::spawn(async move {
-        match SchoolClient::login_with_order(&stored, &settings, &ua).await {
+        let result = SchoolClient::login_with_order(&stored, &settings, &ua).await;
+        let mut inner = state.lock();
+        if inner.auth_generation != generation {
+            return;
+        }
+        inner.authenticating = false;
+        match result {
             Ok((client, method)) => {
-                let mut i = state.lock();
-                if i.client.is_none() {
-                    i.client = Some(client);
+                if inner.client.is_none() {
+                    inner.client = Some(client);
                 }
-                println!("启动自动登录成功（{}）", method_label(method));
+                println!("账号「{name}」自动登录成功（{}）", method_label(method));
             }
-            Err(e) => println!("启动自动登录未成功：{e}"),
+            Err(e) => println!("账号「{name}」自动登录未成功：{e}"),
         }
     });
 }
@@ -84,7 +100,7 @@ mod tests {
 
     fn test_app() -> Router {
         let (state, _rx) = AppState::new();
-        router(state)
+        router(Accounts::single(state))
     }
 
     #[tokio::test]

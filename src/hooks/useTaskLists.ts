@@ -1,5 +1,5 @@
 import { useState, type Dispatch, type SetStateAction } from 'react';
-import { api } from '../bridge';
+import { useApi } from '../AccountContext';
 import { defaults } from '../domain/settings';
 import { type Course, type Settings, type TaskList } from '../types';
 interface Options {
@@ -10,6 +10,7 @@ interface Options {
   perform: (label: string, action: () => Promise<void>) => Promise<void>;
 }
 export function useTaskLists({ settings, setSettings, setSaved, toast, perform }: Options) {
+  const api = useApi();
   const [dropPickerFor, setDropPickerFor] = useState<number | null>(null);
   const [dropQuery, setDropQuery] = useState('');
   const active: TaskList =

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { api } from './bridge';
+import { useApi } from './AccountContext';
 import { progressLabel } from './domain/progress';
 import { type Progress, type RunInfo, type Snapshot } from './types';
 
 export function ActivityLog({ snapshot }: { snapshot: Snapshot }) {
+  const api = useApi();
   const [runs, setRuns] = useState<RunInfo[]>([]);
   const [selected, setSelected] = useState(snapshot.current_run?.id || '');
   const [events, setEvents] = useState<Progress[]>([]);

@@ -4,10 +4,9 @@ use crate::{
     run_log,
     scheduler::run_tasks,
     state::{publish, AppState},
-    storage::{data_path, load_stored_credentials, load_ua_config},
     task_import,
 };
-use axum::{extract::State, Json};
+use axum::{Extension, Json};
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 
@@ -30,14 +29,14 @@ pub(crate) async fn tasks_import(Json(arg): Json<TaskImportArg>) -> Api<Vec<Task
 }
 
 pub(crate) async fn tasks_start(
-    State(state): State<AppState>,
+    Extension(state): Extension<AppState>,
     Json(arg): Json<StartArg>,
 ) -> Api<()> {
     arg.settings.validate(true, arg.list_index)?;
     let token = CancellationToken::new();
     let client;
-    let stored = load_stored_credentials().unwrap_or_default();
-    let ua = load_ua_config().unwrap_or_default();
+    let stored = state.store.load_stored_credentials().unwrap_or_default();
+    let ua = state.store.load_ua_config().unwrap_or_default();
     let list = arg.settings.list(arg.list_index).unwrap().clone();
     {
         let mut i = state.lock();
@@ -48,7 +47,7 @@ pub(crate) async fn tasks_start(
             .client
             .clone()
             .ok_or(ApiError("请先登录学校系统".into()))?;
-        let log = run_log::RunLog::create(&data_path("logs")?, &list.name)?;
+        let log = run_log::RunLog::create(&state.store.path("logs")?, &list.name)?;
         i.run_log = Some(log);
         i.log_error = None;
         i.cancel = Some(token.clone());
@@ -77,7 +76,7 @@ pub(crate) async fn tasks_start(
     Ok(Json(()))
 }
 
-pub(crate) async fn tasks_stop(State(state): State<AppState>) -> Api<()> {
+pub(crate) async fn tasks_stop(Extension(state): Extension<AppState>) -> Api<()> {
     if let Some(cancel) = &state.lock().cancel {
         cancel.cancel();
     }

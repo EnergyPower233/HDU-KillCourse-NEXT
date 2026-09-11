@@ -1,6 +1,6 @@
 import { ArrowDownToLine, Check, ListChecks, Plus, Radio, Square, Trash2, X } from 'lucide-react';
 import type * as React from 'react';
-import { api } from '../bridge';
+import { useApi } from '../AccountContext';
 import { Empty, IntervalInput } from '../components/ui';
 import type { useTaskLists } from '../hooks/useTaskLists';
 import { type Progress, type Settings, type Snapshot, type TaskList } from '../types';
@@ -42,6 +42,7 @@ export function TasksPage({
   reorder,
   taskLists,
 }: Props) {
+  const api = useApi();
   const {
     tasks,
     addList,

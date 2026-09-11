@@ -1,13 +1,18 @@
+mod accounts;
 mod activity;
 mod assets;
 mod auth;
 mod courses;
 mod settings;
 mod tasks;
-use crate::{model::Settings, state::AppState};
+use crate::{
+    accounts::{Accounts, DEFAULT_ACCOUNT},
+    model::Settings,
+};
 use axum::{
-    extract::State,
+    extract::{Request, State},
     http::StatusCode,
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -49,14 +54,46 @@ async fn health() -> Api<serde_json::Value> {
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-async fn shutdown(State(state): State<AppState>) -> Api<()> {
-    let _ = state.shutdown.send(true);
+async fn shutdown(State(accounts): State<Accounts>) -> Api<()> {
+    if accounts
+        .states()
+        .iter()
+        .any(|(_, state)| state.lock().cancel.is_some())
+    {
+        return Err(ApiError(
+            "仍有账号正在运行，请先停止各账号任务后退出".into(),
+        ));
+    }
+    let _ = accounts.get(DEFAULT_ACCOUNT)?.shutdown.send(true);
     Ok(Json(()))
 }
 
-pub(crate) fn router(state: AppState) -> Router {
+async fn select_account(
+    State(accounts): State<Accounts>,
+    mut request: Request,
+    next: Next,
+) -> Response {
+    let id = match request.headers().get("x-hdu-account") {
+        Some(value) => match value.to_str() {
+            Ok(id) => id,
+            Err(_) => return ApiError("账号标识无效".into()).into_response(),
+        },
+        None => DEFAULT_ACCOUNT,
+    };
+    match accounts.get(id) {
+        Ok(state) => {
+            request.extensions_mut().insert(state);
+            next.run(request).await
+        }
+        Err(error) => ApiError(error).into_response(),
+    }
+}
+
+pub(crate) fn router(state: Accounts) -> Router {
     Router::new()
         .route("/api/health", get(health))
+        .route("/api/accounts", get(accounts::list).post(accounts::create))
+        .route("/api/accounts/{id}", post(accounts::rename))
         .route("/api/snapshot", get(activity::snapshot))
         .route("/api/runs", get(activity::runs_get))
         .route("/api/runs/{id}", get(activity::run_get))
@@ -83,5 +120,9 @@ pub(crate) fn router(state: AppState) -> Router {
         .route("/api/tasks/stop", post(tasks::tasks_stop))
         .route("/api/shutdown", post(shutdown))
         .fallback(assets::static_fallback)
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            select_account,
+        ))
         .with_state(state)
 }

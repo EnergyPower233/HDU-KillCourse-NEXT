@@ -2,11 +2,10 @@ use super::{Api, ApiError};
 use crate::{
     run_log,
     state::{AppState, Snapshot},
-    storage::data_path,
 };
 use axum::{
-    extract::{Path, Query, State},
-    Json,
+    extract::{Path, Query},
+    Extension, Json,
 };
 use serde::Deserialize;
 
@@ -15,7 +14,7 @@ pub(crate) struct RunQuery {
     before: Option<usize>,
 }
 
-pub(crate) async fn snapshot(State(state): State<AppState>) -> Api<Snapshot> {
+pub(crate) async fn snapshot(Extension(state): Extension<AppState>) -> Api<Snapshot> {
     let i = state.lock();
     Ok(Json(Snapshot {
         current_run: i.run_log.as_ref().map(|log| log.info.clone()),
@@ -27,17 +26,18 @@ pub(crate) async fn snapshot(State(state): State<AppState>) -> Api<Snapshot> {
     }))
 }
 
-pub(crate) async fn runs_get() -> Api<Vec<run_log::RunInfo>> {
-    run_log::list_runs(&data_path("logs")?)
+pub(crate) async fn runs_get(Extension(state): Extension<AppState>) -> Api<Vec<run_log::RunInfo>> {
+    run_log::list_runs(&state.store.path("logs")?)
         .map(Json)
         .map_err(ApiError)
 }
 
 pub(crate) async fn run_get(
+    Extension(state): Extension<AppState>,
     Path(id): Path<String>,
     Query(query): Query<RunQuery>,
 ) -> Api<run_log::RunPage> {
-    run_log::read_run(&data_path("logs")?, &id, query.before)
+    run_log::read_run(&state.store.path("logs")?, &id, query.before)
         .map(Json)
         .map_err(ApiError)
 }

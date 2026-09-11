@@ -1890,3 +1890,79 @@ label small {
   white-space: normal;
   overflow-wrap: anywhere;
 }
+
+.account-switcher {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+.account-switcher select {
+  width: 100%;
+}
+.account-switcher small {
+  color: var(--text-3);
+  line-height: 1.5;
+}
+.account-loading {
+  padding: 48px;
+}
+.account-list {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.account-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.account-row label {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 160px;
+  margin: 0;
+}
+.account-row input,
+.account-copy input {
+  width: auto;
+}
+.account-row small {
+  display: block;
+  color: var(--text-3);
+  margin-top: 4px;
+}
+.account-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.account-copy {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.account-plan {
+  padding: 12px;
+  margin: 12px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.account-plan li {
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
